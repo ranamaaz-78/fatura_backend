@@ -1,5 +1,7 @@
 <?php
 
+use App\Enums\UserRole;
+use App\Enums\UserStatus;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -16,9 +18,21 @@ return new class extends Migration
             $table->string('name');
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
-            $table->string('password');
+            $table->string('password')->nullable();
+            $table->string('phone')->nullable();
+            $table->string('whatsapp')->nullable();
+            $table->enum('role', UserRole::values())->default(UserRole::Staff->value)->index();
+            $table->unsignedBigInteger('company_id')->nullable()->index();
+            $table->enum('status', UserStatus::values())->default(UserStatus::Active->value)->index();
+            $table->timestamp('last_login_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
+        });
+
+        Schema::create('invite_tokens', function (Blueprint $table) {
+            $table->string('email')->primary();
+            $table->string('token');
+            $table->timestamp('created_at')->nullable();
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {
@@ -43,6 +57,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('users');
+        Schema::dropIfExists('invite_tokens');
         Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('sessions');
     }

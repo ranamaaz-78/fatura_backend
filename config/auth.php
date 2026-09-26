@@ -99,6 +99,14 @@ return [
             'expire' => 60,
             'throttle' => 60,
         ],
+
+        // Set-password links handed out when a super admin converts an application.
+        'invites' => [
+            'provider' => 'users',
+            'table' => 'invite_tokens',
+            'expire' => 60 * 48,
+            'throttle' => 0,
+        ],
     ],
 
     /*
