@@ -71,5 +71,18 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
 
     Route::middleware('subscription.active')->group(function () {
         Route::get('/dashboard', Tenant\DashboardController::class);
+
+        Route::get('/categories', [Tenant\CategoryController::class, 'index']);
+        Route::post('/categories', [Tenant\CategoryController::class, 'store']);
+        Route::patch('/categories/{category}', [Tenant\CategoryController::class, 'update']);
+        Route::delete('/categories/{category}', [Tenant\CategoryController::class, 'destroy']);
+
+        Route::get('/products', [Tenant\ProductController::class, 'index']);
+        Route::post('/products', [Tenant\ProductController::class, 'store']);
+        Route::post('/products/barcode', [Tenant\ProductController::class, 'generateBarcode']);
+        Route::post('/products/import', Tenant\ProductImportController::class);
+        Route::get('/products/{product}', [Tenant\ProductController::class, 'show']);
+        Route::patch('/products/{product}', [Tenant\ProductController::class, 'update']);
+        Route::delete('/products/{product}', [Tenant\ProductController::class, 'destroy']);
     });
 });
