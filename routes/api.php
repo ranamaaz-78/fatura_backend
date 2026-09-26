@@ -77,6 +77,12 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::patch('/categories/{category}', [Tenant\CategoryController::class, 'update']);
         Route::delete('/categories/{category}', [Tenant\CategoryController::class, 'destroy']);
 
+        Route::get('/product-images', [Tenant\ProductImageController::class, 'index']);
+        Route::post('/product-images', [Tenant\ProductImageController::class, 'store']);
+        Route::get('/product-images/{productImage}/file', [Tenant\ProductImageController::class, 'file']);
+        Route::patch('/product-images/{productImage}', [Tenant\ProductImageController::class, 'update']);
+        Route::delete('/product-images/{productImage}', [Tenant\ProductImageController::class, 'destroy']);
+
         Route::get('/products', [Tenant\ProductController::class, 'index']);
         Route::post('/products', [Tenant\ProductController::class, 'store']);
         Route::post('/products/barcode', [Tenant\ProductController::class, 'generateBarcode']);
