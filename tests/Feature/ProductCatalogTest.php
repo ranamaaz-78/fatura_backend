@@ -40,21 +40,22 @@ class ProductCatalogTest extends TestCase
             ->assertJsonPath('data.counts.all', 1);
     }
 
-    public function test_creating_a_product_generates_a_barcode_and_computes_the_selling_price(): void
+    public function test_creating_a_product_keeps_the_typed_selling_price(): void
     {
         $response = $this->actingAs($this->owner, 'sanctum')
             ->postJson('/api/app/products', [
                 'article' => 'Cable USB-C 2m',
                 'buying_price' => 1000,
-                'margin_percent' => 30,
+                'selling_price' => 1500,
                 'iva_percent' => 21,
                 'quantity' => 12,
                 'minimum_stock' => 4,
             ])
             ->assertCreated();
 
-        // 1000 x 1.30 x 1.21 = 1573 cents.
-        $response->assertJsonPath('data.selling_price', 1573)
+        $response->assertJsonPath('data.selling_price', 1500)
+            ->assertJsonPath('data.margin_percent', 50)
+            ->assertJsonPath('data.iva_percent', 21)
             ->assertJsonPath('data.barcode_generated', true);
 
         $barcode = $response->json('data.barcode');
@@ -69,7 +70,7 @@ class ProductCatalogTest extends TestCase
                 'article' => 'Keyboard',
                 'barcode' => '8412345678905',
                 'buying_price' => 2000,
-                'margin_percent' => 25,
+                'selling_price' => 2500,
                 'iva_percent' => 10,
             ])
             ->assertCreated()
@@ -81,27 +82,53 @@ class ProductCatalogTest extends TestCase
                 'article' => 'Keyboard copy',
                 'barcode' => '8412345678905',
                 'buying_price' => 2000,
-                'margin_percent' => 25,
+                'selling_price' => 2500,
                 'iva_percent' => 10,
             ])
             ->assertStatus(422)
             ->assertJsonValidationErrors('barcode');
     }
 
-    public function test_updating_prices_recomputes_the_selling_price(): void
+    public function test_selling_price_must_be_higher_than_the_buying_price(): void
+    {
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/products', [
+                'article' => 'Cable',
+                'buying_price' => 1000,
+                'selling_price' => 1000,
+                'iva_percent' => 21,
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('selling_price');
+    }
+
+    public function test_an_iva_rate_outside_settings_is_rejected(): void
+    {
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/products', [
+                'article' => 'Cable',
+                'buying_price' => 1000,
+                'selling_price' => 1500,
+                'iva_percent' => 15,
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('iva_percent');
+    }
+
+    public function test_updating_the_selling_price_stores_it_and_the_margin(): void
     {
         $product = Product::factory()->create([
             'company_id' => $this->company->id,
             'buying_price' => 1000,
-            'margin_percent' => 0,
-            'iva_percent' => 0,
-            'selling_price' => 1000,
+            'selling_price' => 1200,
+            'iva_percent' => 21,
         ]);
 
         $this->actingAs($this->owner, 'sanctum')
-            ->patchJson("/api/app/products/{$product->id}", ['margin_percent' => 50, 'iva_percent' => 4])
+            ->patchJson("/api/app/products/{$product->id}", ['selling_price' => 1800])
             ->assertOk()
-            ->assertJsonPath('data.selling_price', 1560);
+            ->assertJsonPath('data.selling_price', 1800)
+            ->assertJsonPath('data.margin_percent', 80);
     }
 
     public function test_a_category_in_use_cannot_be_deleted(): void
@@ -127,17 +154,15 @@ class ProductCatalogTest extends TestCase
                         'article' => 'Cable HDMI',
                         'category' => 'cables',
                         'buying_price' => 1000,
-                        'margin_percent' => 30,
                         'iva_percent' => 21,
-                        'selling_price' => 1573,
+                        'selling_price' => 1300,
                     ],
                     [
                         'article' => 'Wireless mouse',
                         'category' => 'Peripherals',
                         'buying_price' => 2000,
-                        'margin_percent' => 25,
                         'iva_percent' => 10,
-                        'selling_price' => 2750,
+                        'selling_price' => 2500,
                     ],
                 ],
             ])
@@ -154,7 +179,7 @@ class ProductCatalogTest extends TestCase
         $this->assertSame('Peripherals', $mouse->category->name);
     }
 
-    public function test_import_saves_nothing_when_a_row_has_a_wrong_selling_price(): void
+    public function test_import_saves_nothing_when_a_selling_price_is_not_above_cost(): void
     {
         $this->actingAs($this->owner, 'sanctum')
             ->postJson('/api/app/products/import', [
@@ -162,16 +187,14 @@ class ProductCatalogTest extends TestCase
                     [
                         'article' => 'Good row',
                         'buying_price' => 1000,
-                        'margin_percent' => 30,
                         'iva_percent' => 21,
-                        'selling_price' => 1573,
+                        'selling_price' => 1300,
                     ],
                     [
                         'article' => 'Bad row',
                         'buying_price' => 1000,
-                        'margin_percent' => 30,
                         'iva_percent' => 21,
-                        'selling_price' => 9999,
+                        'selling_price' => 1000,
                     ],
                 ],
             ])
@@ -181,7 +204,7 @@ class ProductCatalogTest extends TestCase
         $this->assertSame(0, Product::withoutGlobalScopes()->count());
     }
 
-    public function test_import_fills_a_blank_selling_price_from_the_formula(): void
+    public function test_import_rejects_a_blank_selling_price(): void
     {
         $this->actingAs($this->owner, 'sanctum')
             ->postJson('/api/app/products/import', [
@@ -189,15 +212,14 @@ class ProductCatalogTest extends TestCase
                     [
                         'article' => 'No price given',
                         'buying_price' => 1000,
-                        'margin_percent' => 30,
                         'iva_percent' => 21,
                         'selling_price' => null,
                     ],
                 ],
             ])
-            ->assertCreated();
+            ->assertStatus(422);
 
-        $this->assertSame(1573, Product::withoutGlobalScopes()->firstOrFail()->selling_price);
+        $this->assertSame(0, Product::withoutGlobalScopes()->count());
     }
 
     public function test_stock_filters_and_counts(): void

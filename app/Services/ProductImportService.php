@@ -4,14 +4,12 @@ namespace App\Services;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\TaxRate;
 use App\Support\Pricing;
 use Illuminate\Support\Facades\DB;
 
 class ProductImportService
 {
-    /** A row passes when its selling price is within one cent of the formula. */
-    private const PRICE_TOLERANCE = 1;
-
     /**
      * Validates every row first and only writes when all of them pass, so a red
      * row can never slip into the catalog.
@@ -25,6 +23,11 @@ class ProductImportService
         $errors = [];
         $seenBarcodes = [];
         $seenSrNumbers = [];
+        $allowedRates = TaxRate::withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->pluck('rate')
+            ->map(fn ($rate) => round((float) $rate, 2))
+            ->all();
 
         foreach ($rows as $index => $row) {
             $messages = [];
@@ -36,25 +39,20 @@ class ProductImportService
 
             $buying = $this->cents($row['buying_price'] ?? null);
             $selling = $this->cents($row['selling_price'] ?? null);
-            $margin = Pricing::toNumber($row['margin_percent'] ?? null) ?? 0.0;
             $iva = Pricing::toNumber($row['iva_percent'] ?? null) ?? 0.0;
 
             if ($buying === null || $buying < 0) {
                 $messages[] = __('Buying price is not a valid amount.');
             }
 
-            if ($margin < 0 || $iva < 0 || $iva > 100) {
-                $messages[] = __('Margin and IVA must be percentages of zero or more.');
+            if ($selling === null || $selling < 0) {
+                $messages[] = __('Selling price is not a valid amount.');
+            } elseif ($buying !== null && $selling <= $buying) {
+                $messages[] = __('Selling price must be higher than the buying price.');
             }
 
-            if ($buying !== null && $buying >= 0 && $margin >= 0 && $iva >= 0) {
-                $expected = Pricing::sellingPrice($buying, $margin, $iva);
-
-                if ($selling === null) {
-                    $selling = $expected;
-                } elseif (abs($selling - $expected) > self::PRICE_TOLERANCE) {
-                    $messages[] = __('Selling price does not match buying price, margin and IVA.');
-                }
+            if ($iva < 0 || $iva > 100 || ! in_array(round($iva, 2), $allowedRates, true)) {
+                $messages[] = __('Choose an IVA rate from your settings.');
             }
 
             $quantity = $this->wholeNumber($row['quantity'] ?? null);
@@ -106,7 +104,7 @@ class ProductImportService
                 'minimum_stock' => $minimumStock,
                 'buying_price' => $buying,
                 'selling_price' => $selling,
-                'margin_percent' => round($margin, 2),
+                'margin_percent' => Pricing::marginFromPrices((int) $buying, (int) $selling),
                 'iva_percent' => round($iva, 2),
                 'category_name' => $this->text($row['category'] ?? null),
             ];

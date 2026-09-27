@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\App;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ProductResource;
 use App\Models\Product;
+use App\Models\TaxRate;
 use App\Services\BarcodeAllocator;
 use App\Support\Pricing;
 use App\Traits\ApiResponse;
@@ -13,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ProductController extends Controller
 {
@@ -77,11 +79,7 @@ class ProductController extends Controller
         $data['minimum_stock'] ??= 0;
         $data['barcode_generated'] = ($data['barcode'] ?? null) === null;
         $data['barcode'] ??= BarcodeAllocator::forCompany($companyId);
-        $data['selling_price'] = Pricing::sellingPrice(
-            $data['buying_price'],
-            (float) $data['margin_percent'],
-            (float) $data['iva_percent'],
-        );
+        $data = $this->priced($data);
 
         $product = Product::create($data);
 
@@ -101,8 +99,7 @@ class ProductController extends Controller
             }
         }
 
-        $product->fill($data);
-        $product->selling_price = $product->expectedSellingPrice();
+        $product->fill($this->priced($data, $product));
         $product->save();
 
         return $this->success(new ProductResource($product->fresh()->load('category')), __('Product updated.'));
@@ -155,8 +152,53 @@ class ProductController extends Controller
             'quantity' => ['nullable', 'integer', 'min:0', 'max:9999999'],
             'minimum_stock' => ['nullable', 'integer', 'min:0', 'max:9999999'],
             'buying_price' => [$required, 'integer', 'min:0'],
-            'margin_percent' => [$required, 'numeric', 'min:0', 'max:100000'],
+            'selling_price' => [$required, 'integer', 'min:0'],
             'iva_percent' => [$required, 'numeric', 'min:0', 'max:100'],
         ]);
+    }
+
+    /**
+     * Selling price is what the user typed, and it does not include IVA.
+     * Margin is only the gap between the two prices, kept for the catalog.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function priced(array $data, ?Product $product = null): array
+    {
+        $buying = array_key_exists('buying_price', $data)
+            ? (int) $data['buying_price']
+            : (int) ($product->buying_price ?? 0);
+        $selling = array_key_exists('selling_price', $data)
+            ? (int) $data['selling_price']
+            : (int) ($product->selling_price ?? 0);
+        $touchesPrice = $product === null
+            || array_key_exists('buying_price', $data)
+            || array_key_exists('selling_price', $data);
+
+        if ($touchesPrice && $selling <= $buying) {
+            throw ValidationException::withMessages([
+                'selling_price' => __('Selling price must be higher than the buying price.'),
+            ]);
+        }
+
+        if (array_key_exists('iva_percent', $data)) {
+            $rate = round((float) $data['iva_percent'], 2);
+            $unchanged = $product !== null && round((float) $product->iva_percent, 2) === $rate;
+
+            if (! $unchanged && ! TaxRate::allows((int) ($product->company_id ?? request()->user()->company_id), $rate)) {
+                throw ValidationException::withMessages([
+                    'iva_percent' => __('Choose an IVA rate from your settings.'),
+                ]);
+            }
+        }
+
+        if ($touchesPrice) {
+            $data['buying_price'] = $buying;
+            $data['selling_price'] = $selling;
+            $data['margin_percent'] = Pricing::marginFromPrices($buying, $selling);
+        }
+
+        return $data;
     }
 }

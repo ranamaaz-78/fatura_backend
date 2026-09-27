@@ -5,7 +5,6 @@ namespace Database\Factories;
 use App\Models\Company;
 use App\Models\Product;
 use App\Support\Barcode;
-use App\Support\Pricing;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -35,7 +34,7 @@ class ProductFactory extends Factory
             'quantity' => fake()->numberBetween(0, 200),
             'minimum_stock' => fake()->numberBetween(0, 10),
             'buying_price' => $buying,
-            'selling_price' => Pricing::sellingPrice($buying, $margin, $iva),
+            'selling_price' => (int) round($buying * (1 + $margin / 100)),
             'margin_percent' => $margin,
             'iva_percent' => $iva,
         ];

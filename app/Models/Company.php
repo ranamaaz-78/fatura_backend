@@ -87,4 +87,11 @@ class Company extends Model
     {
         return $this->status === CompanyStatus::Active;
     }
+
+    protected static function booted(): void
+    {
+        static::created(function (Company $company) {
+            TaxRate::seedDefaults($company->id);
+        });
+    }
 }

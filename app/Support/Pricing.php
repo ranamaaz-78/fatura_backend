@@ -5,16 +5,16 @@ namespace App\Support;
 class Pricing
 {
     /**
-     * Selling price a product should carry: cost plus margin, then tax on top.
-     *
-     * Both percentages are applied in one expression and rounded once, so the
-     * result never drifts the way a chain of rounded steps would.
+     * Margin implied by a net selling price. IVA is not part of this price;
+     * the invoice adds it later.
      */
-    public static function sellingPrice(int $buyingCents, float $marginPercent, float $ivaPercent): int
+    public static function marginFromPrices(int $buyingCents, int $sellingCents): float
     {
-        $value = $buyingCents * (1 + $marginPercent / 100) * (1 + $ivaPercent / 100);
+        if ($buyingCents <= 0) {
+            return 0.0;
+        }
 
-        return (int) round($value, 0, PHP_ROUND_HALF_UP);
+        return round(($sellingCents - $buyingCents) / $buyingCents * 100, 2);
     }
 
     /**

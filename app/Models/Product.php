@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
-use App\Support\Pricing;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -58,10 +57,5 @@ class Product extends Model
     public function scopeOutOfStock(Builder $query): Builder
     {
         return $query->where('quantity', '<=', 0);
-    }
-
-    public function expectedSellingPrice(): int
-    {
-        return Pricing::sellingPrice($this->buying_price, (float) $this->margin_percent, (float) $this->iva_percent);
     }
 }
