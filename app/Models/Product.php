@@ -15,6 +15,7 @@ class Product extends Model
     protected $fillable = [
         'company_id',
         'category_id',
+        'supplier_id',
         'sr_number',
         'article',
         'description',
@@ -46,6 +47,11 @@ class Product extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
     }
 
     /** At or below the reorder point, and not already out of stock. */

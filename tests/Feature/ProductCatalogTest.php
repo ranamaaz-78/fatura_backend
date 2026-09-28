@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Company;
 use App\Models\Product;
 use App\Models\Subscription;
+use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -235,5 +236,98 @@ class ProductCatalogTest extends TestCase
             ->assertJsonPath('data.counts.low', 1)
             ->assertJsonPath('data.counts.out', 1)
             ->assertJsonPath('data.counts.no_barcode', 1);
+    }
+
+    public function test_creating_a_product_can_attach_a_supplier_from_the_same_company(): void
+    {
+        $supplier = Supplier::factory()->create([
+            'company_id' => $this->company->id,
+            'name' => 'Acme Parts',
+        ]);
+        $foreign = Supplier::factory()->create(['name' => 'Other Co']);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/products', [
+                'article' => 'Cable USB-C 2m',
+                'buying_price' => 1000,
+                'selling_price' => 1500,
+                'iva_percent' => 21,
+                'supplier_id' => $supplier->id,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.supplier_id', $supplier->id)
+            ->assertJsonPath('data.supplier', 'Acme Parts');
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/products', [
+                'article' => 'Stolen attach',
+                'buying_price' => 1000,
+                'selling_price' => 1500,
+                'iva_percent' => 21,
+                'supplier_id' => $foreign->id,
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('supplier_id');
+    }
+
+    public function test_import_attaches_an_existing_supplier_and_rejects_unknown_names(): void
+    {
+        $supplier = Supplier::factory()->create([
+            'company_id' => $this->company->id,
+            'name' => 'Acme Parts',
+            'company_name' => 'Acme SL',
+            'code' => 'S-0001',
+        ]);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/products/import', [
+                'rows' => [
+                    [
+                        'article' => 'Cable HDMI',
+                        'supplier' => 'acme parts',
+                        'buying_price' => 1000,
+                        'iva_percent' => 21,
+                        'selling_price' => 1300,
+                    ],
+                    [
+                        'article' => 'HDMI adapter',
+                        'supplier' => 'S-0001',
+                        'buying_price' => 800,
+                        'iva_percent' => 21,
+                        'selling_price' => 1100,
+                    ],
+                ],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.created', 2);
+
+        $this->assertSame(1, Supplier::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(
+            $supplier->id,
+            Product::withoutGlobalScopes()->where('article', 'Cable HDMI')->value('supplier_id'),
+        );
+        $this->assertSame(
+            $supplier->id,
+            Product::withoutGlobalScopes()->where('article', 'HDMI adapter')->value('supplier_id'),
+        );
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/products/import', [
+                'rows' => [
+                    [
+                        'article' => 'Unknown vendor cable',
+                        'supplier' => 'Ghost Ltd',
+                        'buying_price' => 1000,
+                        'iva_percent' => 21,
+                        'selling_price' => 1300,
+                    ],
+                ],
+            ])
+            ->assertStatus(422);
+
+        $this->assertNull(
+            Product::withoutGlobalScopes()->where('article', 'Unknown vendor cable')->first(),
+        );
+        $this->assertSame(1, Supplier::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
     }
 }

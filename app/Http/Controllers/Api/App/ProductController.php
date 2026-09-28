@@ -30,7 +30,7 @@ class ProductController extends Controller
         ]);
 
         $products = Product::query()
-            ->with('category')
+            ->with(['category', 'supplier'])
             ->when($filters['category_id'] ?? null, fn ($query, $id) => $query->where('category_id', $id))
             ->when($filters['search'] ?? null, function (Builder $query, string $search) {
                 $like = '%'.$search.'%';
@@ -67,7 +67,7 @@ class ProductController extends Controller
 
     public function show(Product $product): JsonResponse
     {
-        return $this->success(new ProductResource($product->load('category')));
+        return $this->success(new ProductResource($product->load(['category', 'supplier'])));
     }
 
     public function store(Request $request): JsonResponse
@@ -83,7 +83,7 @@ class ProductController extends Controller
 
         $product = Product::create($data);
 
-        return $this->success(new ProductResource($product->load('category')), __('Product created.'), 201);
+        return $this->success(new ProductResource($product->load(['category', 'supplier'])), __('Product created.'), 201);
     }
 
     public function update(Request $request, Product $product): JsonResponse
@@ -102,7 +102,7 @@ class ProductController extends Controller
         $product->fill($this->priced($data, $product));
         $product->save();
 
-        return $this->success(new ProductResource($product->fresh()->load('category')), __('Product updated.'));
+        return $this->success(new ProductResource($product->fresh()->load(['category', 'supplier'])), __('Product updated.'));
     }
 
     public function destroy(Product $product): JsonResponse
@@ -148,6 +148,10 @@ class ProductController extends Controller
             'category_id' => [
                 'nullable', 'integer',
                 Rule::exists('categories', 'id')->where('company_id', $companyId),
+            ],
+            'supplier_id' => [
+                'nullable', 'integer',
+                Rule::exists('suppliers', 'id')->where('company_id', $companyId),
             ],
             'quantity' => ['nullable', 'integer', 'min:0', 'max:9999999'],
             'minimum_stock' => ['nullable', 'integer', 'min:0', 'max:9999999'],

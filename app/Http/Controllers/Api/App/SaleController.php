@@ -4,9 +4,13 @@ namespace App\Http\Controllers\Api\App;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\SalesDocumentResource;
+use App\Models\CompanyPaymentMethod;
 use App\Models\SalesDocument;
+use App\Models\SalesDocumentSettlement;
 use App\Services\DocumentNumber;
 use App\Services\SaleIssuer;
+use App\Services\SaleSettler;
+use App\Services\SaleVoider;
 use App\Traits\ApiResponse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -19,6 +23,8 @@ class SaleController extends Controller
 
     public function __construct(
         private readonly SaleIssuer $issuer,
+        private readonly SaleVoider $voider,
+        private readonly SaleSettler $settler,
         private readonly DocumentNumber $numbers,
     ) {}
 
@@ -28,32 +34,54 @@ class SaleController extends Controller
             'search' => ['nullable', 'string', 'max:120'],
             'type' => ['nullable', Rule::in(SalesDocument::TYPES)],
             'payment_status' => ['nullable', Rule::in(SalesDocument::PAYMENTS)],
+            'display_status' => ['nullable', Rule::in(['pending', 'paid', 'partial', 'voided'])],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:50'],
         ]);
 
-        $documents = SalesDocument::query()
-            ->when($filters['type'] ?? null, fn ($query, $type) => $query->where('type', $type))
-            ->when($filters['payment_status'] ?? null, fn ($query, $status) => $query->where('payment_status', $status))
+        $base = SalesDocument::query()
+            ->when($filters['type'] ?? null, function (Builder $query, string $type) {
+                $query->where('type', $type);
+                if ($type === 'quotation') {
+                    $query->whereNull('converted_at');
+                }
+            })
             ->when($filters['search'] ?? null, function (Builder $query, string $search) {
                 $like = '%'.$search.'%';
                 $query->where(function (Builder $inner) use ($like) {
                     $inner->where('number', 'like', $like)
                         ->orWhere('client_name', 'like', $like)
-                        ->orWhere('client_company', 'like', $like)
-                        ->orWhere('client_nif', 'like', $like);
+                        ->orWhere('client_company', 'like', $like);
                 });
-            })
+            });
+
+        $documents = (clone $base)
+            ->with('paymentMethod')
+            ->withSum('settlements as settled_cents', 'total_cents')
+            ->when($filters['payment_status'] ?? null, fn ($query, $status) => $query->where('payment_status', $status))
+            ->when($filters['display_status'] ?? null, fn ($query, $status) => $this->applyDisplayStatus($query, $status))
             ->latest('issued_at')
             ->latest('id')
-            ->limit(100)
-            ->get();
+            ->paginate($filters['per_page'] ?? 8)
+            ->withQueryString();
 
-        return $this->success(SalesDocumentResource::collection($documents));
+        return $this->success([
+            'items' => SalesDocumentResource::collection($documents->items()),
+            'meta' => [
+                'current_page' => $documents->currentPage(),
+                'last_page' => $documents->lastPage(),
+                'per_page' => $documents->perPage(),
+                'total' => $documents->total(),
+            ],
+            'counts' => $this->listCounts($base),
+            'stats' => $this->listStats($base),
+        ]);
     }
 
     public function preview(Request $request): JsonResponse
     {
         $type = $request->validate([
-            'type' => ['required', Rule::in(SalesDocument::TYPES)],
+            'type' => ['required', Rule::in(SalesDocument::ISSUABLE)],
         ])['type'];
 
         $companyId = (int) $request->user()->company_id;
@@ -66,10 +94,217 @@ class SaleController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $data = $request->validate($this->documentRules());
+
+        $data['issued_at'] = $request->date('issued_at');
+        $data['save_customer'] = (bool) ($data['save_customer'] ?? false);
+
+        $document = $this->issuer->issue($request->user(), $data);
+
+        return $this->success(
+            new SalesDocumentResource($document),
+            __(':number issued.', ['number' => $document->number]),
+            201,
+        );
+    }
+
+    public function show(SalesDocument $sale): JsonResponse
+    {
+        $sale->load(SaleSettler::relations());
+
+        return $this->success(new SalesDocumentResource($sale));
+    }
+
+    public function update(Request $request, SalesDocument $sale): JsonResponse
+    {
+        $data = $request->validate($this->documentRules(forUpdate: true));
+        $data['issued_at'] = $request->date('issued_at');
+        $data['save_customer'] = (bool) ($data['save_customer'] ?? false);
+
+        $document = $this->issuer->updateQuote($request->user(), $sale, $data);
+
+        return $this->success(
+            new SalesDocumentResource($document),
+            __(':number updated.', ['number' => $document->number]),
+        );
+    }
+
+    public function convert(Request $request, SalesDocument $sale): JsonResponse
+    {
         $data = $request->validate([
-            'type' => ['required', Rule::in(SalesDocument::TYPES)],
+            'type' => ['required', Rule::in(['factura', 'albaran'])],
+            'payment_status' => ['required', Rule::in(SalesDocument::MARKABLE_PAYMENTS)],
+            'payment_method_id' => ['nullable', 'integer'],
+        ]);
+
+        $data['issued_at'] = now();
+
+        $document = $this->issuer->convert($request->user(), $sale, $data);
+
+        return $this->success(
+            new SalesDocumentResource($document),
+            __(':number issued.', ['number' => $document->number]),
+            201,
+        );
+    }
+
+    public function updatePayment(Request $request, SalesDocument $sale): JsonResponse
+    {
+        if (! SalesDocument::settlesPayment($sale->type)) {
+            return $this->error(__('This document is not paid from here.'), 422);
+        }
+
+        if ($sale->isVoided()) {
+            return $this->error(__('This document is voided.'), 422);
+        }
+
+        $data = $request->validate([
+            'payment_status' => ['required', Rule::in(SalesDocument::MARKABLE_PAYMENTS)],
+            'payment_method_id' => ['nullable', 'integer'],
+        ]);
+
+        if ($sale->payment_status === 'paid' && $data['payment_status'] === 'pending') {
+            return $this->error(__('A paid document cannot go back to pending. Void it instead.'), 422);
+        }
+
+        $methodId = null;
+
+        if ($data['payment_status'] === 'paid') {
+            $methodId = CompanyPaymentMethod::requireActive(
+                (int) $request->user()->company_id,
+                $data['payment_method_id'] ?? null,
+            );
+        }
+
+        $sale->update([
+            'payment_status' => $data['payment_status'],
+            'payment_method_id' => $methodId,
+        ]);
+
+        return $this->success(
+            new SalesDocumentResource($sale->load(['lines', 'paymentMethod'])),
+            $data['payment_status'] === 'paid' ? __('Marked as paid.') : __('Marked as pending.'),
+        );
+    }
+
+    public function settle(Request $request, SalesDocument $sale): JsonResponse
+    {
+        $data = $request->validate([
+            'payment_method_id' => ['required', 'integer'],
+            'lines' => ['required', 'array', 'min:1', 'max:100'],
+            'lines.*.line_id' => ['required', 'integer'],
+            'lines.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
+            'lines.*.unit_price' => ['required', 'integer', 'min:0'],
+        ]);
+
+        $document = $this->settler->settle($request->user(), $sale, $data);
+
+        return $this->success(
+            new SalesDocumentResource($document),
+            $document->payment_status === 'paid'
+                ? __('Proforma settled.')
+                : __('Partial payment recorded.'),
+        );
+    }
+
+    public function updateSettlement(Request $request, SalesDocument $sale, SalesDocumentSettlement $settlement): JsonResponse
+    {
+        $data = $request->validate([
+            'lines' => ['required', 'array', 'min:1', 'max:100'],
+            'lines.*.line_id' => ['required', 'integer'],
+            'lines.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
+        ]);
+
+        $document = $this->settler->updateQuantities($sale, $settlement, $data);
+
+        return $this->success(
+            new SalesDocumentResource($document),
+            __('Payment quantity updated.'),
+        );
+    }
+
+    public function void(Request $request, SalesDocument $sale): JsonResponse
+    {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ]);
+
+        $document = $this->voider->void($request->user(), $sale, trim($data['reason']));
+
+        return $this->success(
+            new SalesDocumentResource($document),
+            __('Document voided. Stock has been put back.'),
+        );
+    }
+
+    private function applyDisplayStatus(Builder $query, string $status): void
+    {
+        if ($status === 'voided') {
+            $query->whereNotNull('voided_at');
+
+            return;
+        }
+
+        $query->whereNull('voided_at')->where('payment_status', $status);
+    }
+
+    /**
+     * @return array{all: int, pending: int, paid: int, partial: int, voided: int}
+     */
+    private function listCounts(Builder $base): array
+    {
+        $live = fn () => (clone $base)->whereNull('voided_at');
+
+        return [
+            'all' => (clone $base)->count(),
+            'pending' => $live()->where('payment_status', 'pending')->count(),
+            'paid' => $live()->where('payment_status', 'paid')->count(),
+            'partial' => $live()->where('payment_status', 'partial')->count(),
+            'voided' => (clone $base)->whereNotNull('voided_at')->count(),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     total_cents: int,
+     *     paid_count: int,
+     *     paid_cents: int,
+     *     pending_count: int,
+     *     pending_cents: int,
+     *     settled_cents: int,
+     *     month_count: int,
+     *     month_cents: int,
+     *     client_count: int
+     * }
+     */
+    private function listStats(Builder $base): array
+    {
+        $live = (clone $base)->whereNull('voided_at');
+        $monthStart = now()->copy()->startOfMonth();
+        $monthEnd = now()->copy()->endOfMonth();
+
+        return [
+            'total_cents' => (int) (clone $live)->sum('total_cents'),
+            'paid_count' => (clone $live)->where('payment_status', 'paid')->count(),
+            'paid_cents' => (int) (clone $live)->where('payment_status', 'paid')->sum('total_cents'),
+            'pending_count' => (clone $live)->where('payment_status', 'pending')->count(),
+            'pending_cents' => (int) (clone $live)->where('payment_status', 'pending')->sum('total_cents'),
+            'settled_cents' => (int) SalesDocumentSettlement::query()
+                ->whereIn('sales_document_id', (clone $live)->select('id'))
+                ->sum('total_cents'),
+            'month_count' => (clone $live)->whereBetween('issued_at', [$monthStart, $monthEnd])->count(),
+            'month_cents' => (int) (clone $live)->whereBetween('issued_at', [$monthStart, $monthEnd])->sum('total_cents'),
+            'client_count' => (int) (clone $base)->distinct()->count('client_name'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function documentRules(bool $forUpdate = false): array
+    {
+        $rules = [
             'issued_at' => ['required', 'date'],
-            'payment_status' => ['required', Rule::in(SalesDocument::PAYMENTS)],
             'customer_id' => ['nullable', 'integer'],
             'save_customer' => ['nullable', 'boolean'],
             'client_code' => ['nullable', 'string', 'max:32'],
@@ -88,38 +323,16 @@ class SaleController extends Controller
             'lines.*.unit_price' => ['required', 'integer', 'min:0'],
             'lines.*.discount_percent' => ['required', 'numeric', 'min:0', 'max:100'],
             'lines.*.iva_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+        ];
+
+        if ($forUpdate) {
+            return $rules;
+        }
+
+        return array_merge($rules, [
+            'type' => ['required', Rule::in(SalesDocument::ISSUABLE)],
+            'payment_status' => ['required', Rule::in(SalesDocument::MARKABLE_PAYMENTS)],
+            'payment_method_id' => ['nullable', 'integer'],
         ]);
-
-        $data['issued_at'] = $request->date('issued_at');
-        $data['save_customer'] = (bool) ($data['save_customer'] ?? false);
-
-        $document = $this->issuer->issue($request->user(), $data);
-
-        return $this->success(
-            new SalesDocumentResource($document),
-            __(':number issued.', ['number' => $document->number]),
-            201,
-        );
-    }
-
-    public function show(SalesDocument $sale): JsonResponse
-    {
-        $sale->load('lines');
-
-        return $this->success(new SalesDocumentResource($sale));
-    }
-
-    public function updatePayment(Request $request, SalesDocument $sale): JsonResponse
-    {
-        $status = $request->validate([
-            'payment_status' => ['required', Rule::in(SalesDocument::PAYMENTS)],
-        ])['payment_status'];
-
-        $sale->update(['payment_status' => $status]);
-
-        return $this->success(
-            new SalesDocumentResource($sale->load('lines')),
-            $status === 'paid' ? __('Marked as paid.') : __('Marked as pending.'),
-        );
     }
 }

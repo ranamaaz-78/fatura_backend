@@ -71,6 +71,7 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
 
     Route::middleware('subscription.active')->group(function () {
         Route::get('/dashboard', Tenant\DashboardController::class);
+        Route::get('/reports/{kind}', [Tenant\ReportController::class, 'show']);
 
         Route::get('/tax-rates', [Tenant\TaxRateController::class, 'index']);
         Route::post('/tax-rates', [Tenant\TaxRateController::class, 'store']);
@@ -82,17 +83,36 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::patch('/categories/{category}', [Tenant\CategoryController::class, 'update']);
         Route::delete('/categories/{category}', [Tenant\CategoryController::class, 'destroy']);
 
+        Route::get('/payments', [Tenant\PaymentController::class, 'index']);
+
+        Route::get('/payment-methods', [Tenant\CompanyPaymentMethodController::class, 'index']);
+        Route::post('/payment-methods', [Tenant\CompanyPaymentMethodController::class, 'store']);
+        Route::patch('/payment-methods/{companyPaymentMethod}/active', [Tenant\CompanyPaymentMethodController::class, 'updateActive']);
+        Route::patch('/payment-methods/{companyPaymentMethod}', [Tenant\CompanyPaymentMethodController::class, 'update']);
+        Route::delete('/payment-methods/{companyPaymentMethod}', [Tenant\CompanyPaymentMethodController::class, 'destroy']);
+
         Route::get('/customers', [Tenant\CustomerController::class, 'index']);
         Route::post('/customers', [Tenant\CustomerController::class, 'store']);
         Route::patch('/customers/{customer}/active', [Tenant\CustomerController::class, 'updateActive']);
         Route::patch('/customers/{customer}', [Tenant\CustomerController::class, 'update']);
         Route::delete('/customers/{customer}', [Tenant\CustomerController::class, 'destroy']);
 
+        Route::get('/suppliers', [Tenant\SupplierController::class, 'index']);
+        Route::post('/suppliers', [Tenant\SupplierController::class, 'store']);
+        Route::patch('/suppliers/{supplier}/active', [Tenant\SupplierController::class, 'updateActive']);
+        Route::patch('/suppliers/{supplier}', [Tenant\SupplierController::class, 'update']);
+        Route::delete('/suppliers/{supplier}', [Tenant\SupplierController::class, 'destroy']);
+
         Route::get('/sales/preview', [Tenant\SaleController::class, 'preview']);
         Route::get('/sales', [Tenant\SaleController::class, 'index']);
         Route::post('/sales', [Tenant\SaleController::class, 'store']);
         Route::get('/sales/{sale}', [Tenant\SaleController::class, 'show']);
+        Route::patch('/sales/{sale}', [Tenant\SaleController::class, 'update']);
+        Route::post('/sales/{sale}/convert', [Tenant\SaleController::class, 'convert']);
         Route::patch('/sales/{sale}/payment', [Tenant\SaleController::class, 'updatePayment']);
+        Route::post('/sales/{sale}/settle', [Tenant\SaleController::class, 'settle']);
+        Route::patch('/sales/{sale}/settlements/{settlement}', [Tenant\SaleController::class, 'updateSettlement']);
+        Route::post('/sales/{sale}/void', [Tenant\SaleController::class, 'void']);
 
         Route::get('/product-images', [Tenant\ProductImageController::class, 'index']);
         Route::post('/product-images', [Tenant\ProductImageController::class, 'store']);

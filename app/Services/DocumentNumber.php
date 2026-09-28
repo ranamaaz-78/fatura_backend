@@ -9,8 +9,11 @@ class DocumentNumber
     private const PREFIX = [
         'factura' => 'F',
         'albaran' => 'AL',
+        'quotation' => 'Q',
+        'proforma' => 'PF',
         'abono' => 'AB',
         'client' => 'C',
+        'supplier' => 'S',
     ];
 
     /** The number the next issue of this kind would receive. Nothing is reserved. */
@@ -59,7 +62,7 @@ class DocumentNumber
     {
         $prefix = self::PREFIX[$kind];
 
-        if ($kind === 'client') {
+        if ($this->isStandingCode($kind)) {
             return sprintf('%s-%04d', $prefix, $number);
         }
 
@@ -68,6 +71,12 @@ class DocumentNumber
 
     private function yearFor(string $kind, ?int $year): int
     {
-        return $kind === 'client' ? 0 : ($year ?? (int) now()->year);
+        return $this->isStandingCode($kind) ? 0 : ($year ?? (int) now()->year);
+    }
+
+    /** Client and supplier codes keep counting; they do not reset each year. */
+    private function isStandingCode(string $kind): bool
+    {
+        return $kind === 'client' || $kind === 'supplier';
     }
 }

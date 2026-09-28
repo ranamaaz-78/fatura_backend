@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\Supplier;
 use App\Models\TaxRate;
 use App\Support\Pricing;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +29,7 @@ class ProductImportService
             ->pluck('rate')
             ->map(fn ($rate) => round((float) $rate, 2))
             ->all();
+        $supplierIndex = $this->supplierIndex($companyId);
 
         foreach ($rows as $index => $row) {
             $messages = [];
@@ -85,6 +87,21 @@ class ProductImportService
                 $seenBarcodes[] = $barcode;
             }
 
+            $supplierNeedle = $this->text($row['supplier'] ?? null);
+            $supplierId = null;
+
+            if ($supplierNeedle !== null) {
+                $matched = $this->matchSupplier($supplierIndex, $supplierNeedle);
+
+                if ($matched === false) {
+                    $messages[] = __('More than one supplier matches this name.');
+                } elseif ($matched === null) {
+                    $messages[] = __('This supplier is not in your list.');
+                } else {
+                    $supplierId = $matched;
+                }
+            }
+
             if ($messages !== []) {
                 $errors[] = ['row' => $index, 'messages' => $messages];
 
@@ -107,6 +124,7 @@ class ProductImportService
                 'margin_percent' => Pricing::marginFromPrices((int) $buying, (int) $selling),
                 'iva_percent' => round($iva, 2),
                 'category_name' => $this->text($row['category'] ?? null),
+                'supplier_id' => $supplierId,
             ];
         }
 
@@ -166,6 +184,61 @@ class ProductImportService
         }
 
         return $map;
+    }
+
+    /**
+     * Excel may name a supplier by name, company name or code. Unknown names
+     * are errors — suppliers are not created from the sheet.
+     *
+     * @return array{unique: array<string, int>, ambiguous: array<string, true>}
+     */
+    private function supplierIndex(int $companyId): array
+    {
+        $unique = [];
+        $ambiguous = [];
+
+        $suppliers = Supplier::withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->get();
+
+        foreach ($suppliers as $supplier) {
+            foreach ([$supplier->name, $supplier->company_name, $supplier->code] as $label) {
+                if (! is_string($label) || trim($label) === '') {
+                    continue;
+                }
+
+                $key = mb_strtolower(trim($label));
+
+                if (isset($ambiguous[$key])) {
+                    continue;
+                }
+
+                if (isset($unique[$key]) && $unique[$key] !== $supplier->id) {
+                    unset($unique[$key]);
+                    $ambiguous[$key] = true;
+
+                    continue;
+                }
+
+                $unique[$key] = $supplier->id;
+            }
+        }
+
+        return ['unique' => $unique, 'ambiguous' => $ambiguous];
+    }
+
+    /**
+     * @param  array{unique: array<string, int>, ambiguous: array<string, true>}  $index
+     */
+    private function matchSupplier(array $index, string $needle): int|false|null
+    {
+        $key = mb_strtolower($needle);
+
+        if (isset($index['ambiguous'][$key])) {
+            return false;
+        }
+
+        return $index['unique'][$key] ?? null;
     }
 
     private function existsForCompany(int $companyId, string $column, string $value): bool

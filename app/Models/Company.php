@@ -92,6 +92,7 @@ class Company extends Model
     {
         static::created(function (Company $company) {
             TaxRate::seedDefaults($company->id);
+            CompanyPaymentMethod::seedDefaults($company->id);
         });
     }
 }

@@ -24,6 +24,7 @@ class ProductFactory extends Factory
         return [
             'company_id' => Company::factory(),
             'category_id' => null,
+            'supplier_id' => null,
             'sr_number' => fake()->unique()->numerify('YKF-######'),
             'article' => fake()->unique()->words(3, true),
             'description' => fake()->sentence(),
