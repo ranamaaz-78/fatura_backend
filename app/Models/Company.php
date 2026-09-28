@@ -16,6 +16,11 @@ class Company extends Model
 {
     use HasFactory;
 
+    public const CURRENCIES = [
+        'EUR', 'USD', 'GBP', 'PKR', 'AED', 'SAR', 'INR', 'MAD', 'CHF', 'CAD', 'AUD',
+        'MXN', 'BRL', 'TRY', 'EGP', 'QAR', 'KWD', 'OMR', 'BHD', 'BDT', 'NGN',
+    ];
+
     protected $fillable = [
         'name',
         'slug',
@@ -93,6 +98,7 @@ class Company extends Model
         static::created(function (Company $company) {
             TaxRate::seedDefaults($company->id);
             CompanyPaymentMethod::seedDefaults($company->id);
+            PrintTemplate::seedDefaults($company->id);
         });
     }
 }

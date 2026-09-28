@@ -20,6 +20,7 @@ class CompanyResource extends JsonResource
             'city' => $this->city,
             'country' => $this->country,
             'currency' => $this->currency,
+            'logo_url' => $this->logo_path ? '/app/company/logo' : null,
             'status' => $this->status->value,
             'notes' => $this->notes,
             'created_at' => $this->created_at?->toIso8601String(),

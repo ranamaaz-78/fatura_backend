@@ -127,5 +127,21 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::get('/products/{product}', [Tenant\ProductController::class, 'show']);
         Route::patch('/products/{product}', [Tenant\ProductController::class, 'update']);
         Route::delete('/products/{product}', [Tenant\ProductController::class, 'destroy']);
+
+        Route::get('/print-templates', [Tenant\PrintTemplateController::class, 'index']);
+        Route::put('/print-templates/{type}', [Tenant\PrintTemplateController::class, 'update'])
+            ->whereIn('type', ['factura', 'albaran', 'quotation', 'proforma']);
+        Route::post('/print-templates/{type}/reset', [Tenant\PrintTemplateController::class, 'reset'])
+            ->whereIn('type', ['factura', 'albaran', 'quotation', 'proforma']);
+        Route::post('/print-templates/{type}/copy', [Tenant\PrintTemplateController::class, 'copy'])
+            ->whereIn('type', ['factura', 'albaran', 'quotation', 'proforma']);
+
+        Route::get('/company', [Tenant\CompanySettingsController::class, 'show']);
+        Route::patch('/company', [Tenant\CompanySettingsController::class, 'update']);
+        Route::patch('/password', [Tenant\PasswordController::class, 'update']);
+
+        Route::get('/company/logo', [Tenant\CompanyLogoController::class, 'file']);
+        Route::post('/company/logo', [Tenant\CompanyLogoController::class, 'store']);
+        Route::delete('/company/logo', [Tenant\CompanyLogoController::class, 'destroy']);
     });
 });
