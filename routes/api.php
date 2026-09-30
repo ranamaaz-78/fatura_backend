@@ -143,5 +143,13 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::get('/company/logo', [Tenant\CompanyLogoController::class, 'file']);
         Route::post('/company/logo', [Tenant\CompanyLogoController::class, 'store']);
         Route::delete('/company/logo', [Tenant\CompanyLogoController::class, 'destroy']);
+
+        Route::get('/whatsapp/status', [Tenant\WhatsAppController::class, 'status']);
+        Route::post('/whatsapp/init', [Tenant\WhatsAppController::class, 'init']);
+        Route::post('/whatsapp/logout', [Tenant\WhatsAppController::class, 'logout']);
+        Route::patch('/whatsapp/settings', [Tenant\WhatsAppController::class, 'updateSettings']);
+        Route::post('/whatsapp/send-document', [Tenant\WhatsAppController::class, 'sendDocument']);
+        Route::post('/whatsapp/test', [Tenant\WhatsAppController::class, 'testMessage']);
     });
 });
+
