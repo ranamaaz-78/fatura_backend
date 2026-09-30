@@ -36,7 +36,7 @@ class SubscriptionExpiringMail extends Mailable implements ShouldQueue
     public function content(): Content
     {
         return new Content(
-            markdown: 'mail.subscription-expiring',
+            view: 'mail.subscription-expiring',
             with: [
                 'owner' => $this->owner,
                 'company' => $this->company,

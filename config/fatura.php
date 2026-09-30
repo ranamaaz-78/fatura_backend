@@ -26,7 +26,7 @@ return [
     ],
 
     'phone' => [
-        'default_country' => env('PHONE_DEFAULT_COUNTRY', 'PK'),
+        'default_country' => env('PHONE_DEFAULT_COUNTRY', 'ES'),
     ],
 
     'super_admin' => [

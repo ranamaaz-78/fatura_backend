@@ -43,7 +43,7 @@ class PrintTemplateController extends Controller
             'types.*' => ['required', 'string', Rule::in(array_values(array_diff(PrintTemplate::TYPES, [$type])))],
         ])['types'];
 
-        $fields = $source->only(['primary_color', 'font_key', 'footer_notes', 'show_logo', 'show_signature']);
+        $fields = $source->only(['primary_color', 'font_key', 'footer_notes', 'notes', 'show_logo', 'show_signature']);
 
         foreach ($targets as $target) {
             $payload = $fields;
@@ -91,7 +91,7 @@ class PrintTemplateController extends Controller
     }
 
     /**
-     * @return array{primary_color: string, font_key: string, footer_notes: string, show_logo: bool, show_signature: bool}
+     * @return array{primary_color: string, font_key: string, footer_notes: string, notes?: string, show_logo: bool, show_signature: bool}
      */
     private function validated(Request $request, string $type): array
     {
@@ -99,12 +99,19 @@ class PrintTemplateController extends Controller
             'primary_color' => ['required', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'font_key' => ['required', 'string', Rule::in(PrintTemplate::FONTS)],
             'footer_notes' => ['nullable', 'string', 'max:2000'],
+            'notes' => ['nullable', 'string', 'max:2000'],
             'show_logo' => ['required', 'boolean'],
             'show_signature' => ['required', 'boolean'],
         ]);
 
         $data['primary_color'] = strtolower($data['primary_color']);
         $data['footer_notes'] = $data['footer_notes'] ?? '';
+
+        // Left alone when the request does not mention it, so a client that only knows the
+        // colour, font and terms cannot wipe the note.
+        if (array_key_exists('notes', $data)) {
+            $data['notes'] = trim((string) $data['notes']);
+        }
         if ($type === 'albaran') {
             $data['show_logo'] = false;
         }

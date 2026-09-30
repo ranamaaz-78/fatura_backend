@@ -80,6 +80,7 @@ class PrintTemplate extends Model
         'primary_color',
         'font_key',
         'footer_notes',
+        'notes',
         'show_logo',
         'show_signature',
     ];
@@ -93,7 +94,7 @@ class PrintTemplate extends Model
     }
 
     /**
-     * @return array<string, array{primary_color: string, font_key: string, footer_notes: string, show_logo: bool, show_signature: bool}>
+     * @return array<string, array{primary_color: string, font_key: string, footer_notes: string, notes: string, show_logo: bool, show_signature: bool}>
      */
     public static function defaults(): array
     {
@@ -102,6 +103,7 @@ class PrintTemplate extends Model
                 'primary_color' => self::DEFAULT_COLOR,
                 'font_key' => 'geist',
                 'footer_notes' => 'Thank you for your business.',
+                'notes' => '',
                 'show_logo' => true,
                 'show_signature' => false,
             ],
@@ -109,6 +111,7 @@ class PrintTemplate extends Model
                 'primary_color' => self::DEFAULT_COLOR,
                 'font_key' => 'geist',
                 'footer_notes' => 'This delivery note is not a tax invoice.',
+                'notes' => '',
                 'show_logo' => false,
                 'show_signature' => true,
             ],
@@ -116,6 +119,7 @@ class PrintTemplate extends Model
                 'primary_color' => self::DEFAULT_COLOR,
                 'font_key' => 'geist',
                 'footer_notes' => "Prices shown both without and with tax, at the rates in force today.\nDelivery starts once the quotation is accepted in writing.\nStock is not reserved until acceptance.",
+                'notes' => '',
                 'show_logo' => true,
                 'show_signature' => false,
             ],
@@ -123,6 +127,7 @@ class PrintTemplate extends Model
                 'primary_color' => self::DEFAULT_COLOR,
                 'font_key' => 'geist',
                 'footer_notes' => 'Proforma document. Not a tax invoice and not a payment request.',
+                'notes' => '',
                 'show_logo' => true,
                 'show_signature' => false,
             ],
@@ -140,10 +145,21 @@ class PrintTemplate extends Model
     }
 
     /**
-     * @return array{primary_color: string, font_key: string, footer_notes: string, show_logo: bool, show_signature: bool}
+     * @return array{primary_color: string, font_key: string, footer_notes: string, notes: string, show_logo: bool, show_signature: bool}
      */
     public static function defaultFor(string $type): array
     {
         return self::defaults()[$type];
+    }
+
+    /** The note a new document of this type is stamped with, or null when none is set. */
+    public static function notesFor(int $companyId, string $type): ?string
+    {
+        $notes = trim((string) static::withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->where('type', $type)
+            ->value('notes'));
+
+        return $notes === '' ? null : $notes;
     }
 }

@@ -33,7 +33,7 @@ class AccountReadyMail extends Mailable implements ShouldQueue
     public function content(): Content
     {
         return new Content(
-            markdown: 'mail.account-ready',
+            view: 'mail.account-ready',
             with: [
                 'owner' => $this->owner,
                 'company' => $this->company,

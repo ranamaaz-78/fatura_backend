@@ -132,6 +132,60 @@ class ProductCatalogTest extends TestCase
             ->assertJsonPath('data.margin_percent', 80);
     }
 
+    public function test_a_new_product_has_no_last_buying_price(): void
+    {
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/products', [
+                'article' => 'Cable',
+                'buying_price' => 1000,
+                'selling_price' => 1500,
+                'iva_percent' => 21,
+                'quantity' => 1,
+                'minimum_stock' => 0,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.buying_price', 1000)
+            ->assertJsonPath('data.last_buying_price', null);
+    }
+
+    public function test_changing_the_buying_price_keeps_the_previous_one_as_the_last_buying_price(): void
+    {
+        $product = Product::factory()->create([
+            'company_id' => $this->company->id,
+            'buying_price' => 1000,
+            'selling_price' => 2000,
+        ]);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->patchJson("/api/app/products/{$product->id}", ['buying_price' => 1200])
+            ->assertOk()
+            ->assertJsonPath('data.buying_price', 1200)
+            ->assertJsonPath('data.last_buying_price', 1000);
+
+        // Another change moves the price it replaces, not the very first one.
+        $this->actingAs($this->owner, 'sanctum')
+            ->patchJson("/api/app/products/{$product->id}", ['buying_price' => 1350])
+            ->assertOk()
+            ->assertJsonPath('data.buying_price', 1350)
+            ->assertJsonPath('data.last_buying_price', 1200);
+    }
+
+    public function test_saving_without_changing_the_buying_price_leaves_the_last_one_alone(): void
+    {
+        $product = Product::factory()->create([
+            'company_id' => $this->company->id,
+            'buying_price' => 1000,
+            'selling_price' => 2000,
+        ]);
+        $product->update(['buying_price' => 1100]);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->patchJson("/api/app/products/{$product->id}", ['selling_price' => 2500, 'buying_price' => 1100])
+            ->assertOk()
+            ->assertJsonPath('data.buying_price', 1100)
+            ->assertJsonPath('data.last_buying_price', 1000);
+    }
+
     public function test_a_category_in_use_cannot_be_deleted(): void
     {
         $category = Category::factory()->create(['company_id' => $this->company->id]);

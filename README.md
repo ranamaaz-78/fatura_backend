@@ -1,6 +1,6 @@
-# Fatura Backend
+# YK Digital Solutions Backend
 
-Laravel REST API for Fatura. Requires **PHP 8.3+**, Composer, and MySQL.
+Laravel REST API for YK Digital Solutions. Requires **PHP 8.3+**, Composer, and MySQL.
 
 On this machine the default `php` on PATH may be 8.2. Use WAMP PHP 8.3, for example:
 
@@ -20,7 +20,7 @@ composer install
 Copy `.env.example` to `.env` if `.env` does not exist, then set:
 
 ```env
-APP_NAME=Fatura
+APP_NAME="YK Digital Solutions"
 APP_URL=http://localhost:8000
 
 DB_CONNECTION=mysql

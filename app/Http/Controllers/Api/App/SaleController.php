@@ -313,7 +313,11 @@ class SaleController extends Controller
             'client_phone' => ['nullable', 'string', 'max:40'],
             'client_nif' => ['nullable', 'string', 'max:32'],
             'client_nie' => ['nullable', 'string', 'max:32'],
-            'notes' => ['nullable', 'string', 'max:2000'],
+            // A discount on the whole bill: a percentage, or an amount in cents.
+            'discount_type' => ['nullable', Rule::in(['percent', 'amount'])],
+            'discount_value' => ['nullable', 'required_with:discount_type', 'numeric', 'min:0'],
+            // A rate from Settings. The server works out the amount. Invoices and quotations only.
+            'recargo_rate_id' => ['nullable', 'integer'],
             'lines' => ['required', 'array', 'min:1', 'max:100'],
             'lines.*.product_id' => ['nullable', 'integer'],
             'lines.*.sr_number' => ['nullable', 'string', 'max:64'],

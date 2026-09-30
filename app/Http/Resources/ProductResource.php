@@ -25,6 +25,8 @@ class ProductResource extends JsonResource
             'barcode_generated' => $this->barcode_generated,
             // Cents, so the client never has to undo a rounded decimal.
             'buying_price' => $this->buying_price,
+            // The buying price before the latest change. Null until it has changed once.
+            'last_buying_price' => $this->last_buying_price,
             'selling_price' => $this->selling_price,
             'margin_percent' => (float) $this->margin_percent,
             'iva_percent' => (float) $this->iva_percent,

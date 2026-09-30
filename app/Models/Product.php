@@ -26,10 +26,24 @@ class Product extends Model
         'quantity',
         'minimum_stock',
         'buying_price',
+        'last_buying_price',
         'selling_price',
         'margin_percent',
         'iva_percent',
     ];
+
+    /**
+     * Whenever the buying price changes, the price it replaces is kept in
+     * last_buying_price. Whatever path saves the product, this runs.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Product $product) {
+            if ($product->exists && $product->isDirty('buying_price') && ! $product->isDirty('last_buying_price')) {
+                $product->last_buying_price = (int) $product->getOriginal('buying_price');
+            }
+        });
+    }
 
     protected function casts(): array
     {
@@ -38,6 +52,7 @@ class Product extends Model
             'quantity' => 'integer',
             'minimum_stock' => 'integer',
             'buying_price' => 'integer',
+            'last_buying_price' => 'integer',
             'selling_price' => 'integer',
             'margin_percent' => 'decimal:2',
             'iva_percent' => 'decimal:2',

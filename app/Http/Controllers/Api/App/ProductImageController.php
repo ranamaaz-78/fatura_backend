@@ -12,8 +12,11 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 class ProductImageController extends Controller
 {
@@ -72,15 +75,25 @@ class ProductImageController extends Controller
 
             $takenKeys[] = $key;
 
-            $saved[] = ProductImage::create([
-                'company_id' => $companyId,
-                'created_by' => $request->user()->id,
-                'name' => $name,
-                'name_key' => $key,
-                'path' => $this->store->put($file, $companyId),
-                'mime' => $this->store->mime($file),
-                'size_bytes' => (int) $file->getSize(),
-            ]);
+            // Stored as a web-sized image; the row records what was actually kept.
+            $stored = $this->store->put($file, $companyId);
+
+            try {
+                $saved[] = ProductImage::create([
+                    'company_id' => $companyId,
+                    'created_by' => $request->user()->id,
+                    'name' => $name,
+                    'name_key' => $key,
+                    'path' => $stored['path'],
+                    'mime' => $stored['mime'],
+                    'size_bytes' => $stored['size'],
+                ]);
+            } catch (Throwable $e) {
+                // No row means no way to ever delete it later: take the file back out now.
+                $this->store->remove($stored['path']);
+
+                throw $e;
+            }
         }
 
         $payload = [
@@ -137,10 +150,21 @@ class ProductImageController extends Controller
     {
         $path = $productImage->path;
 
-        DB::transaction(function () use ($productImage, $path) {
-            $productImage->delete();
-            $this->store->remove($path);
-        });
+        // The row and the file go together. If the file will not delete, the row stays
+        // too, so nothing is left behind in storage without a record.
+        try {
+            DB::transaction(function () use ($productImage, $path) {
+                $productImage->delete();
+
+                if (! $this->store->remove($path)) {
+                    throw new RuntimeException('Stored file could not be deleted: '.$path);
+                }
+            });
+        } catch (RuntimeException $e) {
+            Log::error($e->getMessage());
+
+            return $this->error(__('The file could not be removed from storage. Nothing was deleted, please try again.'), 500);
+        }
 
         return $this->success([], __('File deleted.'));
     }

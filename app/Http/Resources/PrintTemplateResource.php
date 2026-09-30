@@ -14,6 +14,7 @@ class PrintTemplateResource extends JsonResource
             'primary_color' => $this->primary_color,
             'font_key' => $this->font_key,
             'footer_notes' => $this->footer_notes ?? '',
+            'notes' => $this->notes ?? '',
             'show_logo' => (bool) $this->show_logo,
             'show_signature' => (bool) $this->show_signature,
         ];

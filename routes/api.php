@@ -17,7 +17,8 @@ Route::get('/health', function () {
 
 Route::prefix('public')->group(function () {
     Route::get('/plans', [PublicPlanController::class, 'index']);
-    Route::post('/applications', [PublicApplicationController::class, 'store'])->middleware('throttle:5,1');
+    Route::post('/applications/otp', [PublicApplicationController::class, 'requestOtp'])->middleware('throttle:6,1');
+    Route::post('/applications', [PublicApplicationController::class, 'store'])->middleware('throttle:10,1');
 });
 
 Route::prefix('auth')->group(function () {
@@ -77,6 +78,11 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::post('/tax-rates', [Tenant\TaxRateController::class, 'store']);
         Route::patch('/tax-rates/{taxRate}', [Tenant\TaxRateController::class, 'update']);
         Route::delete('/tax-rates/{taxRate}', [Tenant\TaxRateController::class, 'destroy']);
+
+        Route::get('/recargo-rates', [Tenant\RecargoRateController::class, 'index']);
+        Route::post('/recargo-rates', [Tenant\RecargoRateController::class, 'store']);
+        Route::patch('/recargo-rates/{recargoRate}', [Tenant\RecargoRateController::class, 'update']);
+        Route::delete('/recargo-rates/{recargoRate}', [Tenant\RecargoRateController::class, 'destroy']);
 
         Route::get('/categories', [Tenant\CategoryController::class, 'index']);
         Route::post('/categories', [Tenant\CategoryController::class, 'store']);

@@ -25,6 +25,8 @@ class SalesDocumentLineResource extends JsonResource
             'base_cents' => $this->base_cents,
             'tax_cents' => $this->tax_cents,
             'total_cents' => $this->total_cents,
+            // base_cents and tax_cents are already net of this share of the bill discount.
+            'bill_discount_cents' => (int) $this->bill_discount_cents,
             'settled_quantity' => $settled,
             'remaining_quantity' => max(0, (int) $this->quantity - $settled),
         ];

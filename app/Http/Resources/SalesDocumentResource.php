@@ -48,6 +48,12 @@ class SalesDocumentResource extends JsonResource
             'notes' => $this->notes,
             'base_cents' => $this->base_cents,
             'tax_cents' => $this->tax_cents,
+            // base_cents is the taxable base after the bill discount; base + discount is the subtotal.
+            'discount_type' => $this->discount_type,
+            'discount_value' => $this->discount_value,
+            'discount_cents' => (int) $this->discount_cents,
+            'recargo_percent' => $this->recargo_percent,
+            'recargo_cents' => (int) $this->recargo_cents,
             'total_cents' => $this->total_cents,
             'settled_cents' => $this->settledCents(),
             'is_partial' => $this->payment_status === 'partial',

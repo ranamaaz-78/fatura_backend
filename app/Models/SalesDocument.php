@@ -44,6 +44,11 @@ class SalesDocument extends Model
         'notes',
         'base_cents',
         'tax_cents',
+        'discount_type',
+        'discount_value',
+        'discount_cents',
+        'recargo_percent',
+        'recargo_cents',
         'total_cents',
     ];
 
@@ -91,6 +96,12 @@ class SalesDocument extends Model
     public static function carriesTax(string $type): bool
     {
         return $type !== 'albaran' && $type !== 'proforma';
+    }
+
+    /** Recargo de equivalencia can be added to an invoice or a quotation, and to nothing else. */
+    public static function carriesRecargo(string $type): bool
+    {
+        return $type === 'factura' || $type === 'quotation';
     }
 
     /** A proforma lists the agreed price only, with nothing taken off it. */
@@ -175,6 +186,10 @@ class SalesDocument extends Model
             'converted_at' => 'datetime',
             'base_cents' => 'integer',
             'tax_cents' => 'integer',
+            'discount_value' => 'float',
+            'discount_cents' => 'integer',
+            'recargo_percent' => 'float',
+            'recargo_cents' => 'integer',
             'total_cents' => 'integer',
         ];
     }

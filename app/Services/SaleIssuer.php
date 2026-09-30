@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\CompanyPaymentMethod;
 use App\Models\Customer;
+use App\Models\PrintTemplate;
 use App\Models\Product;
+use App\Models\RecargoRate;
 use App\Models\SalesDocument;
 use App\Models\User;
 use App\Support\SaleMath;
@@ -20,7 +22,12 @@ class SaleIssuer
         return DB::transaction(function () use ($user, $input) {
             $companyId = (int) $user->company_id;
             $lines = $this->pricedLines($companyId, $input['lines'], $input['type']);
+            [$lines, $discount] = $this->applyBillDiscount($lines, $input, $input['type']);
             $customer = $this->resolveCustomer($companyId, $input);
+
+            $baseCents = (int) array_sum(array_column($lines, 'base_cents'));
+            $taxCents = (int) array_sum(array_column($lines, 'tax_cents'));
+            [$recargoPercent, $recargoCents] = $this->resolveRecargo($companyId, $input, $baseCents, $input['type']);
 
             $issuedAt = $input['issued_at'];
             $document = SalesDocument::create([
@@ -38,10 +45,16 @@ class SaleIssuer
                 'client_phone' => ($input['client_phone'] ?? '') !== '' ? $input['client_phone'] : null,
                 'client_nif' => ($input['client_nif'] ?? '') !== '' ? $input['client_nif'] : null,
                 'client_nie' => ($input['client_nie'] ?? '') !== '' ? $input['client_nie'] : null,
-                'notes' => ($input['notes'] ?? '') !== '' ? $input['notes'] : null,
-                'base_cents' => array_sum(array_column($lines, 'base_cents')),
-                'tax_cents' => array_sum(array_column($lines, 'tax_cents')),
-                'total_cents' => array_sum(array_column($lines, 'total_cents')),
+                // Stamped from Printables, never typed on the document. It keeps the note it was issued with.
+                'notes' => PrintTemplate::notesFor($companyId, $input['type']),
+                'base_cents' => $baseCents,
+                'tax_cents' => $taxCents,
+                'discount_type' => $discount['type'],
+                'discount_value' => $discount['value'],
+                'discount_cents' => $discount['cents'],
+                'recargo_percent' => $recargoPercent,
+                'recargo_cents' => $recargoCents,
+                'total_cents' => $baseCents + $taxCents + $recargoCents,
             ]);
 
             $document->lines()->createMany($lines);
@@ -69,7 +82,12 @@ class SaleIssuer
 
             $companyId = (int) $user->company_id;
             $lines = $this->pricedLines($companyId, $input['lines'], 'quotation');
+            [$lines, $discount] = $this->applyBillDiscount($lines, $input, 'quotation');
             $customer = $this->resolveCustomer($companyId, $input);
+
+            $baseCents = (int) array_sum(array_column($lines, 'base_cents'));
+            $taxCents = (int) array_sum(array_column($lines, 'tax_cents'));
+            [$recargoPercent, $recargoCents] = $this->resolveRecargo($companyId, $input, $baseCents, 'quotation');
 
             $document->lines()->delete();
             $document->update([
@@ -81,10 +99,15 @@ class SaleIssuer
                 'client_phone' => ($input['client_phone'] ?? '') !== '' ? $input['client_phone'] : null,
                 'client_nif' => ($input['client_nif'] ?? '') !== '' ? $input['client_nif'] : null,
                 'client_nie' => ($input['client_nie'] ?? '') !== '' ? $input['client_nie'] : $document->client_nie,
-                'notes' => ($input['notes'] ?? '') !== '' ? $input['notes'] : null,
-                'base_cents' => array_sum(array_column($lines, 'base_cents')),
-                'tax_cents' => array_sum(array_column($lines, 'tax_cents')),
-                'total_cents' => array_sum(array_column($lines, 'total_cents')),
+                // The note the quotation was issued with stays as it is; only Printables sets notes.
+                'base_cents' => $baseCents,
+                'tax_cents' => $taxCents,
+                'discount_type' => $discount['type'],
+                'discount_value' => $discount['value'],
+                'discount_cents' => $discount['cents'],
+                'recargo_percent' => $recargoPercent,
+                'recargo_cents' => $recargoCents,
+                'total_cents' => $baseCents + $taxCents + $recargoCents,
             ]);
             $document->lines()->createMany($lines);
 
@@ -123,7 +146,12 @@ class SaleIssuer
                 'client_phone' => $document->client_phone,
                 'client_nif' => $document->client_nif,
                 'client_nie' => $document->client_nie,
-                'notes' => $document->notes,
+                // The new document takes the note of its own type from Printables.
+                'notes' => null,
+                // Carried as the rate the quote had, even if it has since left Settings.
+                'recargo_percent' => SalesDocument::carriesRecargo($input['type']) ? $document->recargo_percent : null,
+                'discount_type' => $document->discount_type,
+                'discount_value' => $document->discount_type === 'amount' ? (int) round($document->discount_value) : $document->discount_value,
                 'lines' => $document->lines->map(fn ($line) => [
                     'product_id' => $line->product_id,
                     'sr_number' => $line->sr_number,
@@ -279,6 +307,111 @@ class SaleIssuer
             'nif' => ($input['client_nif'] ?? '') !== '' ? $input['client_nif'] : null,
             'nie' => ($input['client_nie'] ?? '') !== '' ? $input['client_nie'] : null,
         ]);
+    }
+
+    /**
+     * A discount on the whole bill comes off the taxable base, so IVA is then worked out on what
+     * is left. It is split over the lines in proportion to their bases, which keeps every line,
+     * the per-rate tax report and the document total in step, cent for cent.
+     *
+     * @param  array<int, array<string, mixed>>  $lines
+     * @return array{0: array<int, array<string, mixed>>, 1: array{type: string|null, value: float|int|null, cents: int}}
+     */
+    private function applyBillDiscount(array $lines, array $input, string $type): array
+    {
+        $none = ['type' => null, 'value' => null, 'cents' => 0];
+        $kind = $input['discount_type'] ?? null;
+
+        if ($kind === null || $kind === '') {
+            return [array_map(fn ($line) => $line + ['bill_discount_cents' => 0], $lines), $none];
+        }
+
+        if (! SalesDocument::carriesDiscount($type)) {
+            throw ValidationException::withMessages([
+                'discount_type' => __('This kind of document does not take a discount.'),
+            ]);
+        }
+
+        $value = (float) ($input['discount_value'] ?? 0);
+        $gross = (int) array_sum(array_column($lines, 'base_cents'));
+
+        if ($kind === 'percent') {
+            if ($value > 100) {
+                throw ValidationException::withMessages([
+                    'discount_value' => __('A discount cannot be more than 100%.'),
+                ]);
+            }
+
+            $cents = SaleMath::percentOf($gross, $value);
+            $stored = round($value, 2);
+        } else {
+            $cents = (int) round($value);
+
+            if ($cents > $gross) {
+                throw ValidationException::withMessages([
+                    'discount_value' => __('The discount cannot be more than the bill.'),
+                ]);
+            }
+
+            $stored = $cents;
+        }
+
+        if ($cents <= 0) {
+            return [array_map(fn ($line) => $line + ['bill_discount_cents' => 0], $lines), $none];
+        }
+
+        $shares = SaleMath::allocate(array_column($lines, 'base_cents'), $cents);
+
+        foreach ($lines as $index => $line) {
+            $base = (int) $line['base_cents'] - $shares[$index];
+            $tax = SaleMath::taxOn($base, (float) $line['iva_percent']);
+
+            $lines[$index]['base_cents'] = $base;
+            $lines[$index]['tax_cents'] = $tax;
+            $lines[$index]['total_cents'] = $base + $tax;
+            $lines[$index]['bill_discount_cents'] = $shares[$index];
+        }
+
+        return [$lines, ['type' => $kind, 'value' => $stored, 'cents' => $cents]];
+    }
+
+    /**
+     * The rate comes from the company's own recargo list and the amount is worked out
+     * here, so a crafted request cannot invent a percentage or an amount.
+     *
+     * @return array{0: float|null, 1: int}
+     */
+    private function resolveRecargo(int $companyId, array $input, int $baseCents, string $type): array
+    {
+        // Only convert() sets this: a quotation's own rate travelling to the invoice made from it.
+        if (($input['recargo_percent'] ?? null) !== null && (float) $input['recargo_percent'] > 0) {
+            $percent = (float) $input['recargo_percent'];
+
+            return [$percent, SaleMath::recargo($baseCents, $percent)];
+        }
+
+        if (empty($input['recargo_rate_id'])) {
+            return [null, 0];
+        }
+
+        if (! SalesDocument::carriesRecargo($type)) {
+            throw ValidationException::withMessages([
+                'recargo_rate_id' => __('Recargo de equivalencia can only be added to an invoice or a quotation.'),
+            ]);
+        }
+
+        $rate = RecargoRate::withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->whereKey($input['recargo_rate_id'])
+            ->first();
+
+        if ($rate === null) {
+            throw ValidationException::withMessages([
+                'recargo_rate_id' => __('That recargo rate is not in your settings.'),
+            ]);
+        }
+
+        return [(float) $rate->rate, SaleMath::recargo($baseCents, (float) $rate->rate)];
     }
 
     private function resolvePaymentMethod(int $companyId, array $input): ?int

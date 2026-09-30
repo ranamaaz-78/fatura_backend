@@ -22,6 +22,7 @@ class SalesDocumentLine extends Model
         'base_cents',
         'tax_cents',
         'total_cents',
+        'bill_discount_cents',
     ];
 
     public function document(): BelongsTo
@@ -64,6 +65,7 @@ class SalesDocumentLine extends Model
             'base_cents' => 'integer',
             'tax_cents' => 'integer',
             'total_cents' => 'integer',
+            'bill_discount_cents' => 'integer',
         ];
     }
 }

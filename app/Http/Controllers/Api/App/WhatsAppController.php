@@ -269,7 +269,7 @@ class WhatsAppController extends Controller
         }
 
         $waDigits = Phone::waDigits($data['phone']) ?: preg_replace('/\D+/', '', $data['phone']);
-        $message = $data['message'] ?: ("Hello from {$company->name}! This is a test WhatsApp message from Fatura.");
+        $message = $data['message'] ?: ("Hello from {$company->name}! This is a test WhatsApp message from YK Digital Solutions.");
 
         $result = $this->client->sendText($instanceName, $waDigits, $message);
 

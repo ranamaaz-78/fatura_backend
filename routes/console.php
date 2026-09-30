@@ -10,3 +10,4 @@ Artisan::command('inspire', function () {
 
 Schedule::command('subscriptions:expire')->dailyAt('00:10')->withoutOverlapping();
 Schedule::command('subscriptions:remind')->dailyAt('09:00')->withoutOverlapping();
+Schedule::command('storage:prune-orphans')->dailyAt('03:30')->withoutOverlapping();
