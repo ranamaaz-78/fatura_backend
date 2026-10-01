@@ -191,7 +191,11 @@ class ApplicationController extends Controller
             'owner' => new UserResource($result['owner']),
             'subscription' => new SubscriptionResource($result['subscription']),
             'whatsapp_url' => $result['whatsapp_url'],
+            'email_sent' => $result['email_sent'],
+            'email_error' => $result['email_error'],
             'application' => new ApplicationResource($application->fresh('plan')),
-        ], __('Account created. The owner has been sent a set-password link.'), 201);
+        ], $result['email_sent']
+            ? __('Account created. The owner has been emailed a set-password link.')
+            : __('Account created, but the set-password email could not be sent. Use Resend access link once the mail problem is fixed.'), 201);
     }
 }

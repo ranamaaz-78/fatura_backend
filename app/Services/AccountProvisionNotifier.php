@@ -10,7 +10,9 @@ use App\Models\Application;
 use App\Models\Company;
 use App\Models\Subscription;
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Throwable;
 
 class AccountProvisionNotifier
 {
@@ -23,30 +25,39 @@ class AccountProvisionNotifier
     /**
      * Mint a fresh invite link and deliver it by email + WhatsApp.
      *
-     * @return string|null wa.me URL when the link driver is active
+     * The email goes out straight away instead of waiting on a queue worker, so the admin
+     * learns on the spot whether it left. A failure never undoes the account.
      */
-    public function sendAccountReady(User $owner, Company $company, Subscription $subscription, ?Application $application = null): ?string
+    public function sendAccountReady(User $owner, Company $company, Subscription $subscription, ?Application $application = null): AccountReadyDelivery
     {
         $url = $this->invites->urlFor($owner);
+        $context = [
+            'company_id' => $company->id,
+            'user_id' => $owner->id,
+            'application_id' => $application?->id,
+        ];
 
-        Mail::to($owner->email)->queue(new AccountReadyMail($owner, $company, $subscription, $url));
+        $emailError = null;
+
+        try {
+            Mail::to($owner->email)->sendNow(new AccountReadyMail($owner, $company, $subscription, $url));
+        } catch (Throwable $e) {
+            $emailError = $e->getMessage();
+            Log::error('Account-ready email failed: '.$emailError);
+        }
 
         $this->logger->log(
             NotificationChannel::Email,
             'account_ready',
             $owner->email,
-            NotificationStatus::Queued,
-            [
-                'company_id' => $company->id,
-                'user_id' => $owner->id,
-                'application_id' => $application?->id,
-            ],
+            $emailError === null ? NotificationStatus::Sent : NotificationStatus::Failed,
+            $context + ['error' => $emailError],
         );
 
         $number = $owner->whatsapp ?: $owner->phone;
 
         if (blank($number)) {
-            return null;
+            return new AccountReadyDelivery($emailError === null, $emailError);
         }
 
         $result = $this->whatsapp->send($number, $this->message($owner, $company, $url));
@@ -65,7 +76,7 @@ class AccountProvisionNotifier
             ],
         );
 
-        return $result->url;
+        return new AccountReadyDelivery($emailError === null, $emailError, $result->url);
     }
 
     private function message(User $owner, Company $company, string $url): string

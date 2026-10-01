@@ -14,6 +14,10 @@ use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+/**
+ * Each company links its own WhatsApp. The session is named by the server (one fixed name per
+ * company), so no company can name, and so hijack, another company's session.
+ */
 class WhatsAppController extends Controller
 {
     use ApiResponse;
@@ -22,10 +26,6 @@ class WhatsAppController extends Controller
         protected WhatsAppMicroserviceClient $client
     ) {}
 
-    /**
-     * The session name is owned by the server, never the client: one fixed name
-     * per company, so no tenant can name (and so hijack) another tenant's session.
-     */
     private function instanceNameFor(Company $company): string
     {
         return 'company_'.$company->id;
@@ -40,80 +40,119 @@ class WhatsAppController extends Controller
     }
 
     /**
-     * Get current company's WhatsApp instance status and settings.
+     * What the screen needs in one place.
+     *
+     * status is one of: disconnected, connecting, qrcode, connected, service_offline, service_misconfigured.
+     *
+     * @return array<string, mixed>
      */
+    private function state(Company $company, ?string $status = null, ?string $qrcode = null, ?bool $serviceAlive = null): array
+    {
+        $stored = $this->ownInstance($company) ? ($company->whatsapp_status ?: 'disconnected') : 'disconnected';
+        $status ??= $stored;
+
+        return [
+            'instance_name' => $this->instanceNameFor($company),
+            'status' => $status,
+            'connected_phone' => $status === 'connected' ? $company->whatsapp_connected_phone : null,
+            'connected_name' => $status === 'connected' ? $company->whatsapp_connected_name : null,
+            'qrcode' => $status === 'qrcode' ? $qrcode : null,
+            'auto_send' => (bool) ($company->whatsapp_auto_send ?? true),
+            'message_template' => $company->whatsapp_message_template,
+            'service_alive' => $serviceAlive ?? ! in_array($status, ['service_offline', 'service_misconfigured'], true),
+        ];
+    }
+
+    /** Keep what we store in step with what the service says. */
+    private function remember(Company $company, array $live): void
+    {
+        $company->whatsapp_status = $live['status'];
+
+        if (! empty($live['phone'])) {
+            $company->whatsapp_connected_phone = $live['phone'];
+        }
+        if (! empty($live['name'])) {
+            $company->whatsapp_connected_name = $live['name'];
+        }
+        if ($live['status'] === 'disconnected') {
+            $company->whatsapp_connected_phone = null;
+            $company->whatsapp_connected_name = null;
+        }
+
+        $company->saveQuietly();
+    }
+
+    /** Offline or refused: tell the person plainly, with a status the screen can act on. */
+    private function unavailable(array $result): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $result['error'] ?? __('WhatsApp is not available right now. Please try again in a moment.'),
+            'data' => [],
+            'code' => $result['code'] ?? WhatsAppMicroserviceClient::OFFLINE,
+        ], 503);
+    }
+
+    private function isUnavailable(array $result): bool
+    {
+        return in_array($result['code'] ?? null, [WhatsAppMicroserviceClient::OFFLINE, WhatsAppMicroserviceClient::AUTH], true);
+    }
+
+    /** The company's WhatsApp, as it is right now. */
     public function status(Request $request): JsonResponse
     {
         $company = $request->user()->company;
-        $instanceName = $this->ownInstance($company);
-        $qrcode = null;
+        $instance = $this->ownInstance($company);
 
-        if ($instanceName) {
-            $live = $this->client->getStatus($instanceName);
-            if (!empty($live['status']) && $live['status'] !== 'service_offline') {
-                $company->whatsapp_status = $live['status'];
-                if (!empty($live['phone'])) {
-                    $company->whatsapp_connected_phone = $live['phone'];
-                }
-                if (!empty($live['name'])) {
-                    $company->whatsapp_connected_name = $live['name'];
-                }
-                if ($live['status'] === 'disconnected') {
-                    $company->whatsapp_connected_phone = null;
-                    $company->whatsapp_connected_name = null;
-                }
-                $company->saveQuietly();
-                $qrcode = $live['qrcode'] ?? null;
-            }
+        if ($instance === null) {
+            $alive = $this->client->isAlive();
+
+            return $this->success($this->state($company, $alive ? 'disconnected' : 'service_offline', null, $alive));
         }
 
-        return $this->success([
-            'instance_name' => $instanceName ?? $this->instanceNameFor($company),
-            'status' => $instanceName ? ($company->whatsapp_status ?? 'disconnected') : 'disconnected',
-            'connected_phone' => $company->whatsapp_connected_phone,
-            'connected_name' => $company->whatsapp_connected_name,
-            'qrcode' => $qrcode,
-            'auto_send' => (bool) ($company->whatsapp_auto_send ?? true),
-            'message_template' => $company->whatsapp_message_template,
-            'service_alive' => $this->client->isAlive(),
-        ]);
+        $live = $this->client->getStatus($instance);
+
+        if (isset($live['error'])) {
+            return $this->success($this->state($company, $live['status'], null, false));
+        }
+
+        $this->remember($company, $live);
+
+        return $this->success($this->state($company, $live['status'], $live['qrcode'] ?? null));
     }
 
     /**
-     * Initialize or start a WhatsApp instance session.
+     * Start linking: returns the QR code to scan. Send fresh=1 to throw the old session away and get a new code.
      */
     public function init(Request $request): JsonResponse
     {
         $company = $request->user()->company;
         $instanceName = $this->instanceNameFor($company);
 
+        if ($request->boolean('fresh') && $this->ownInstance($company)) {
+            $this->client->logoutInstance($instanceName);
+        }
+
         $result = $this->client->initInstance($instanceName);
 
-        if (!empty($result['error'])) {
-            return $this->error($result['error'], 422);
+        if (! empty($result['error'])) {
+            return $this->isUnavailable($result) ? $this->unavailable($result) : $this->error($result['error'], 422);
         }
 
         $company->whatsapp_instance_name = $instanceName;
-        $company->whatsapp_status = $result['status'] ?? 'connecting';
-        if (!empty($result['phone'])) {
-            $company->whatsapp_connected_phone = $result['phone'];
-        }
-        $company->saveQuietly();
-
-        return $this->success([
-            'instance_name' => $instanceName,
+        $this->remember($company, [
             'status' => $result['status'] ?? 'connecting',
-            'qrcode' => $result['qrcode'] ?? null,
-            'connected_phone' => $result['phone'] ?? null,
-            'connected_name' => $result['name'] ?? null,
-            'auto_send' => (bool) ($company->whatsapp_auto_send ?? true),
-            'message_template' => $company->whatsapp_message_template,
-        ], __('WhatsApp instance initialized. Scan QR code to connect.'));
+            'phone' => $result['phone'] ?? null,
+            'name' => $result['name'] ?? null,
+        ]);
+
+        return $this->success(
+            $this->state($company, $result['status'] ?? 'connecting', $result['qrcode'] ?? null),
+            __('Scan the QR code with WhatsApp on your phone.'),
+        );
     }
 
-    /**
-     * Logout and disconnect the WhatsApp instance.
-     */
+    /** Disconnect the linked WhatsApp. */
     public function logout(Request $request): JsonResponse
     {
         $company = $request->user()->company;
@@ -128,12 +167,10 @@ class WhatsAppController extends Controller
         $company->whatsapp_connected_name = null;
         $company->saveQuietly();
 
-        return $this->success(null, __('WhatsApp instance disconnected successfully.'));
+        return $this->success($this->state($company), __('WhatsApp disconnected.'));
     }
 
-    /**
-     * Update automation settings (auto-send and template).
-     */
+    /** Automatic sending and the message wording. */
     public function updateSettings(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -147,7 +184,7 @@ class WhatsAppController extends Controller
             $company->whatsapp_auto_send = (bool) $data['auto_send'];
         }
         if (array_key_exists('message_template', $data)) {
-            $company->whatsapp_message_template = $data['message_template'];
+            $company->whatsapp_message_template = filled($data['message_template']) ? $data['message_template'] : null;
         }
 
         $company->saveQuietly();
@@ -158,9 +195,7 @@ class WhatsAppController extends Controller
         ], __('WhatsApp settings saved.'));
     }
 
-    /**
-     * Send a sales document PDF directly to customer WhatsApp.
-     */
+    /** Send a sales document PDF to the customer's WhatsApp. */
     public function sendDocument(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -176,7 +211,7 @@ class WhatsAppController extends Controller
         $instanceName = $this->ownInstance($company);
 
         if ($instanceName === null || $company->whatsapp_status !== 'connected') {
-            return $this->error(__('Your WhatsApp is not connected. Please connect your WhatsApp in Settings first.'), 422);
+            return $this->error(__('Your WhatsApp is not connected. Connect it in Settings, under WhatsApp, first.'), 422);
         }
 
         $head = base64_decode(substr(preg_replace('/^data:[^,]*;base64,/', '', $data['fileBase64']), 0, 16), true);
@@ -191,7 +226,7 @@ class WhatsAppController extends Controller
             ->with(['customer', 'lines'])
             ->first();
 
-        if (!$sale) {
+        if (! $sale) {
             return $this->error(__('Sales document not found.'), 404);
         }
 
@@ -207,20 +242,14 @@ class WhatsAppController extends Controller
 
         $caption = $data['caption'] ?? null;
         if (empty($caption)) {
-            $totalFormatted = number_format($sale->total_cents / 100, 2) . ' ' . $company->currency;
+            $totalFormatted = number_format($sale->total_cents / 100, 2).' '.$company->currency;
             $typeLabel = ucfirst($sale->type);
             $caption = "Dear {$sale->client_name},\n\nPlease find attached your {$typeLabel} *#{$sale->number}* from *{$company->name}* for *{$totalFormatted}*.\n\nThank you for choosing us!";
         }
 
         $filename = $data['filename'] ?: "{$sale->number}.pdf";
 
-        $result = $this->client->sendDocument(
-            $instanceName,
-            $waDigits,
-            $data['fileBase64'],
-            $filename,
-            $caption
-        );
+        $result = $this->client->sendDocument($instanceName, $waDigits, $data['fileBase64'], $filename, $caption);
 
         NotificationLog::create([
             'channel' => NotificationChannel::WhatsApp,
@@ -228,7 +257,7 @@ class WhatsAppController extends Controller
             'recipient' => $waDigits,
             'company_id' => $company->id,
             'user_id' => $request->user()->id,
-            'status' => !empty($result['success']) ? NotificationStatus::Sent : NotificationStatus::Failed,
+            'status' => ! empty($result['success']) ? NotificationStatus::Sent : NotificationStatus::Failed,
             'payload' => [
                 'sale_id' => $sale->id,
                 'number' => $sale->number,
@@ -237,11 +266,13 @@ class WhatsAppController extends Controller
                 'caption' => $caption,
             ],
             'error' => $result['error'] ?? null,
-            'sent_at' => !empty($result['success']) ? now() : null,
+            'sent_at' => ! empty($result['success']) ? now() : null,
         ]);
 
         if (empty($result['success'])) {
-            return $this->error($result['error'] ?? __('Failed to send WhatsApp document.'), 422);
+            return $this->isUnavailable($result)
+                ? $this->unavailable($result)
+                : $this->error($result['error'] ?? __('Failed to send WhatsApp document.'), 422);
         }
 
         return $this->success([
@@ -252,12 +283,13 @@ class WhatsAppController extends Controller
     }
 
     /**
-     * Send a quick test text message.
+     * A quick test message. With no number given it goes to the linked WhatsApp itself,
+     * so a test never needs anyone else's number.
      */
     public function testMessage(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'phone' => ['required', 'string', 'max:50'],
+            'phone' => ['nullable', 'string', 'max:50'],
             'message' => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -265,19 +297,26 @@ class WhatsAppController extends Controller
         $instanceName = $this->ownInstance($company);
 
         if ($instanceName === null || $company->whatsapp_status !== 'connected') {
-            return $this->error(__('Your WhatsApp is not connected. Please connect your WhatsApp in Settings first.'), 422);
+            return $this->error(__('Your WhatsApp is not connected. Connect it in Settings, under WhatsApp, first.'), 422);
         }
 
-        $waDigits = Phone::waDigits($data['phone']) ?: preg_replace('/\D+/', '', $data['phone']);
-        $message = $data['message'] ?: ("Hello from {$company->name}! This is a test WhatsApp message from YK Digital Solutions.");
+        $target = $data['phone'] ?? null ?: $company->whatsapp_connected_phone;
+
+        if (blank($target)) {
+            return $this->error(__('Enter the number to send the test to.'), 422);
+        }
+
+        $waDigits = Phone::waDigits($target) ?: preg_replace('/\D+/', '', $target);
+        $message = ($data['message'] ?? null) ?: "Hello from {$company->name}! This is a test message from YK Digital Solutions. Your WhatsApp is connected.";
 
         $result = $this->client->sendText($instanceName, $waDigits, $message);
 
         if (empty($result['success'])) {
-            return $this->error($result['error'] ?? __('Failed to send WhatsApp message.'), 422);
+            return $this->isUnavailable($result)
+                ? $this->unavailable($result)
+                : $this->error($result['error'] ?? __('Failed to send WhatsApp message.'), 422);
         }
 
-        return $this->success($result, __('Test WhatsApp message sent successfully!'));
+        return $this->success(['recipient' => $waDigits], __('Test message sent.'));
     }
 }
-

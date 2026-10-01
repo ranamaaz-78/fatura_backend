@@ -19,7 +19,7 @@
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                     <tr>
                         @foreach (str_split($code) as $digit)
-                            <td align="center" width="46" height="58" bgcolor="#ffffff" style="width:46px;height:58px;background-color:#ffffff;border:1px solid #c3c6d7;border-radius:12px;font-family:'JetBrains Mono',Consolas,Menlo,'Courier New',monospace;font-size:30px;font-weight:700;color:#004ac6;">{{ $digit }}</td>
+                            <td align="center" width="46" height="58" bgcolor="#ffffff" style="width:46px;height:58px;background-color:#ffffff;border:1px solid #c3c6d7;border-radius:12px;font-family:'Geist','Segoe UI',Helvetica,Arial,sans-serif;font-size:30px;font-weight:700;color:#004ac6;">{{ $digit }}</td>
                             @if (! $loop->last)
                                 <td width="7" style="width:7px;font-size:0;line-height:0;">&nbsp;</td>
                             @endif

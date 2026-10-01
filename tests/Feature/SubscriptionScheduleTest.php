@@ -65,8 +65,8 @@ class SubscriptionScheduleTest extends TestCase
 
         $this->artisan('subscriptions:remind')->assertSuccessful();
 
-        Mail::assertQueuedCount(1);
-        Mail::assertQueued(
+        Mail::assertSentCount(1);
+        Mail::assertSent(
             SubscriptionExpiringMail::class,
             fn (SubscriptionExpiringMail $mail) => $mail->hasTo('grace@northwind.test'),
         );

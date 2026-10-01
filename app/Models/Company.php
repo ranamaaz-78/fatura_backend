@@ -6,6 +6,7 @@ use App\Enums\CompanyStatus;
 use App\Enums\SubscriptionStatus;
 use App\Enums\UserRole;
 use App\Support\Phone;
+use App\Support\Text;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -25,10 +26,12 @@ class Company extends Model
         'name',
         'slug',
         'email',
+        'tax_id',
         'phone',
         'whatsapp',
         'address',
         'city',
+        'postal_code',
         'country',
         'currency',
         'logo_path',
@@ -41,6 +44,66 @@ class Company extends Model
         return [
             'status' => CompanyStatus::class,
         ];
+    }
+
+    /** What a business must give before it can issue documents; the logo is checked as well. */
+    public const PROFILE_FIELDS = ['name', 'email', 'tax_id', 'phone', 'whatsapp', 'address', 'city', 'postal_code', 'country', 'currency'];
+
+    /** @return list<string> the profile fields still empty, with "logo" when none is uploaded */
+    public function missingProfileFields(): array
+    {
+        $missing = array_values(array_filter(
+            self::PROFILE_FIELDS,
+            fn (string $field) => blank($this->getAttribute($field)),
+        ));
+
+        if (blank($this->logo_path)) {
+            $missing[] = 'logo';
+        }
+
+        return $missing;
+    }
+
+    public function isProfileComplete(): bool
+    {
+        return $this->missingProfileFields() === [];
+    }
+
+    // Names and places are stored in Proper Case, however they were typed.
+    protected function name(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => Text::proper($value));
+    }
+
+    protected function address(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => Text::proper($value));
+    }
+
+    protected function city(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => Text::proper($value));
+    }
+
+    protected function country(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => Text::proper($value));
+    }
+
+    protected function email(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => $value === null ? null : mb_strtolower(trim($value)));
+    }
+
+    /** NIF, NIE or CIF: capitals, no spaces or dashes, so the same number is always written the same way. */
+    protected function taxId(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => blank($value) ? null : mb_strtoupper((string) preg_replace('/[\s\-.]+/', '', $value)));
+    }
+
+    protected function postalCode(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => blank($value) ? null : mb_strtoupper(trim((string) preg_replace('/\s+/', ' ', $value))));
     }
 
     protected function phone(): Attribute

@@ -36,7 +36,6 @@ class PrintTemplateTest extends TestCase
         $this->actingAs($this->owner, 'sanctum')
             ->getJson('/api/app/print-templates')
             ->assertOk()
-            ->assertJsonPath('data.logo_url', null)
             ->assertJsonCount(4, 'data.templates')
             ->assertJsonPath('data.templates.0.type', 'factura')
             ->assertJsonPath('data.templates.0.primary_color', '#004ac6')
@@ -247,7 +246,8 @@ class PrintTemplateTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('message', 'The file extension does not match the real image type.');
 
-        $this->assertNull($this->company->fresh()->logo_path);
+        // A rejected file leaves the logo the company already had.
+        $this->assertSame('company-logos/factory.png', $this->company->fresh()->logo_path);
     }
 
     private function realJpeg(string $clientName): UploadedFile

@@ -2,8 +2,6 @@
 
 namespace App\Notifications;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
@@ -11,10 +9,8 @@ use Illuminate\Notifications\Notification;
  * Only used when something calls the invites broker directly; the convert flow
  * sends AccountReadyMail instead so the invite link ships with onboarding copy.
  */
-class InvitePasswordNotification extends Notification implements ShouldQueue
+class InvitePasswordNotification extends Notification
 {
-    use Queueable;
-
     public function __construct(public string $token) {}
 
     public function via(object $notifiable): array

@@ -161,7 +161,7 @@ class ConvertApplicationTest extends TestCase
         $this->assertDatabaseHas('payments', ['amount' => '400.00']);
     }
 
-    public function test_it_queues_the_account_ready_mail_and_logs_both_channels(): void
+    public function test_it_sends_the_account_ready_mail_at_once_and_logs_both_channels(): void
     {
         Mail::fake();
 
@@ -175,7 +175,9 @@ class ConvertApplicationTest extends TestCase
 
         $response->assertCreated();
 
-        Mail::assertQueued(AccountReadyMail::class, fn (AccountReadyMail $mail) => $mail->hasTo('grace@northwind.test'));
+        Mail::assertSent(AccountReadyMail::class, fn (AccountReadyMail $mail) => $mail->hasTo('grace@northwind.test'));
+        Mail::assertNothingQueued();
+        $response->assertJsonPath('data.email_sent', true);
 
         $this->assertSame(
             'http://localhost:5173',
@@ -188,9 +190,31 @@ class ConvertApplicationTest extends TestCase
         $this->assertStringContainsString('set-password', urldecode($whatsappUrl));
 
         $this->assertSame(2, NotificationLog::count());
-        $this->assertTrue(NotificationLog::where('channel', NotificationChannel::Email)->exists());
+        $this->assertTrue(NotificationLog::where('channel', NotificationChannel::Email)->where('status', 'sent')->exists());
         $this->assertTrue(NotificationLog::where('channel', NotificationChannel::WhatsApp)->exists());
         $this->assertDatabaseHas('invite_tokens', ['email' => 'grace@northwind.test']);
+    }
+
+    public function test_a_mail_failure_still_creates_the_account_and_tells_the_admin(): void
+    {
+        Mail::shouldReceive('to')->andReturnSelf();
+        Mail::shouldReceive('sendNow')->andThrow(new \RuntimeException('smtp down'));
+
+        $plan = Plan::factory()->create();
+        $application = Application::factory()->pending()->create();
+
+        $response = $this->actingAs($this->admin(), 'sanctum')->postJson(
+            "/api/admin/applications/{$application->id}/convert",
+            $this->payload($plan),
+        );
+
+        $response->assertCreated()
+            ->assertJsonPath('data.email_sent', false)
+            ->assertJsonPath('data.email_error', 'smtp down');
+
+        $this->assertDatabaseHas('companies', ['email' => 'billing@northwind.test']);
+        $this->assertTrue(NotificationLog::where('channel', NotificationChannel::Email)->where('status', 'failed')->exists());
+        $this->assertStringStartsWith('https://wa.me/', $response->json('data.whatsapp_url'));
     }
 
     public function test_it_rejects_an_owner_email_that_already_exists(): void

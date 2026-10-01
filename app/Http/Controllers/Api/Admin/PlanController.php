@@ -9,6 +9,7 @@ use App\Models\Plan;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -28,7 +29,11 @@ class PlanController extends Controller
         $data = $this->validated($request);
         $data['slug'] = $this->uniqueSlug($data['slug'] ?? $data['name']);
 
-        $plan = Plan::create($data);
+        $plan = DB::transaction(function () use ($data) {
+            $this->claimFeatured($data);
+
+            return Plan::create($data);
+        });
 
         return $this->success(new PlanResource($plan), __('Plan created.'), 201);
     }
@@ -46,7 +51,10 @@ class PlanController extends Controller
             $data['slug'] = $this->uniqueSlug($data['slug'], $plan->id);
         }
 
-        $plan->update($data);
+        DB::transaction(function () use ($plan, $data) {
+            $this->claimFeatured($data, $plan->id);
+            $plan->update($data);
+        });
 
         return $this->success(new PlanResource($plan->fresh()), __('Plan updated.'));
     }
@@ -70,6 +78,17 @@ class PlanController extends Controller
         $plan->delete();
 
         return $this->success([], __('Plan deleted.'));
+    }
+
+    /** Only one plan can be featured: turning it on for this plan turns it off everywhere else. */
+    private function claimFeatured(array $data, ?int $exceptId = null): void
+    {
+        if (! empty($data['is_featured'])) {
+            Plan::query()
+                ->when($exceptId, fn ($query) => $query->where('id', '!=', $exceptId))
+                ->where('is_featured', true)
+                ->update(['is_featured' => false]);
+        }
     }
 
     private function validated(Request $request, ?Plan $plan = null): array

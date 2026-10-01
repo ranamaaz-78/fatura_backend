@@ -122,14 +122,19 @@ class ConvertApplicationService
         });
 
         // Side effects run after commit so a rollback never leaks a live invite link.
-        $whatsappUrl = $this->notifier->sendAccountReady(
+        $delivery = $this->notifier->sendAccountReady(
             $result['owner'],
             $result['company'],
             $result['subscription'],
             $application,
         );
 
-        return [...$result, 'whatsapp_url' => $whatsappUrl];
+        return [
+            ...$result,
+            'whatsapp_url' => $delivery->whatsappUrl,
+            'email_sent' => $delivery->emailSent,
+            'email_error' => $delivery->emailError,
+        ];
     }
 
     private function uniqueSlug(string $name): string

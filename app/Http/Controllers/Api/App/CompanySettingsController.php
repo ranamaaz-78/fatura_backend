@@ -8,6 +8,7 @@ use App\Models\Company;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
 class CompanySettingsController extends Controller
@@ -27,34 +28,47 @@ class CompanySettingsController extends Controller
         $company = $request->user()->company;
         abort_unless($company, 404);
 
-        $company->update($this->validated($request));
+        $company->update($this->validated($request, $company));
 
         return $this->success(new CompanyResource($company->fresh()), __('Company details saved.'));
     }
 
     /**
-     * @return array{name: string, email: string, phone: ?string, whatsapp: ?string, address: ?string, city: ?string, country: ?string, currency: string}
+     * Every detail is compulsory: they print on every document, and the workspace stays closed until they are in.
+     *
+     * @return array<string, mixed>
      */
-    private function validated(Request $request): array
+    private function validated(Request $request, Company $company): array
     {
         if ($request->exists('currency')) {
             $request->merge(['currency' => strtoupper((string) $request->input('currency'))]);
         }
 
-        $data = $request->validate([
+        $validator = Validator::make($request->all(), [
             'name' => ['required', 'string', 'max:180'],
             'email' => ['required', 'email', 'max:180'],
-            'phone' => ['nullable', 'string', 'max:40'],
-            'whatsapp' => ['nullable', 'string', 'max:40'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'city' => ['nullable', 'string', 'max:80'],
-            'country' => ['nullable', 'string', 'max:80'],
+            // One field for NIF, NIE or CIF.
+            'tax_id' => ['required', 'string', 'max:32', 'regex:/^[A-Za-z0-9][A-Za-z0-9\s.\-\/]{3,30}$/'],
+            'phone' => ['required', 'string', 'max:40'],
+            'whatsapp' => ['required', 'string', 'max:40'],
+            'address' => ['required', 'string', 'max:255'],
+            'city' => ['required', 'string', 'max:80'],
+            'postal_code' => ['required', 'string', 'max:16', 'regex:/^[A-Za-z0-9][A-Za-z0-9\s\-]{1,14}$/'],
+            'country' => ['required', 'string', 'max:80'],
             'currency' => ['required', 'string', 'size:3', Rule::in(Company::CURRENCIES)],
+        ], [
+            'tax_id.regex' => __('Enter a valid NIF, NIE or CIF.'),
+            'postal_code.regex' => __('Enter a valid postal code.'),
         ]);
 
-        foreach (['phone', 'whatsapp', 'address', 'city', 'country'] as $field) {
-            $data[$field] = ($data[$field] ?? '') !== '' ? $data[$field] : null;
-        }
+        // The logo is uploaded on its own; the details cannot be saved without one.
+        $validator->after(function ($validator) use ($company) {
+            if (blank($company->logo_path)) {
+                $validator->errors()->add('logo', __('Upload your company logo.'));
+            }
+        });
+
+        $data = $validator->validate();
 
         return $data;
     }

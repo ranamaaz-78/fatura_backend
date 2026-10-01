@@ -28,6 +28,7 @@ class SalesDocument extends Model
         'type',
         'number',
         'issued_at',
+        'expires_at',
         'payment_status',
         'payment_method_id',
         'voided_at',
@@ -169,9 +170,29 @@ class SalesDocument extends Model
         return $this->converted_at !== null;
     }
 
+    /** The last moment a quotation stays open: the end of the day, valid_days after the date written on it. */
+    public static function expiryFor(\DateTimeInterface $issuedAt): \Illuminate\Support\Carbon
+    {
+        // The day is the business's day: a quotation dated late evening in Karachi still has its full week.
+        return \Illuminate\Support\Carbon::instance($issuedAt)
+            ->setTimezone(config('fatura.timezone'))
+            ->addDays((int) config('fatura.quotations.valid_days', 7))
+            ->endOfDay()
+            ->setTimezone(config('app.timezone'));
+    }
+
+    /** An open quotation that has run past its week. Once converted it is settled, so it never expires. */
+    public function isExpired(): bool
+    {
+        return $this->type === 'quotation'
+            && ! $this->isConverted()
+            && $this->expires_at !== null
+            && $this->expires_at->isPast();
+    }
+
     public function canEdit(): bool
     {
-        return $this->type === 'quotation' && ! $this->isConverted();
+        return $this->type === 'quotation' && ! $this->isConverted() && ! $this->isExpired();
     }
 
     public function canConvert(): bool
@@ -183,6 +204,7 @@ class SalesDocument extends Model
     {
         return [
             'issued_at' => 'datetime',
+            'expires_at' => 'datetime',
             'voided_at' => 'datetime',
             'converted_at' => 'datetime',
             'base_cents' => 'integer',

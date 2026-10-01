@@ -63,6 +63,8 @@ Route::middleware(['auth:sanctum', 'role:super_admin'])->prefix('admin')->group(
     Route::patch('/companies/{company}/status', [Admin\CompanyController::class, 'updateStatus']);
     Route::post('/companies/{company}/subscriptions', [Admin\CompanyController::class, 'subscriptions']);
     Route::post('/companies/{company}/resend-access', [Admin\CompanyController::class, 'resendAccess']);
+    Route::get('/companies/{company}/whatsapp', [Admin\WhatsAppController::class, 'show']);
+    Route::post('/companies/{company}/whatsapp/disconnect', [Admin\WhatsAppController::class, 'disconnect']);
     Route::post('/subscriptions/{subscription}/cancel', [Admin\CompanyController::class, 'cancelSubscription']);
 });
 
@@ -70,7 +72,7 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
     Route::get('/me', Auth\MeController::class);
     Route::get('/subscription', Tenant\SubscriptionController::class);
 
-    Route::middleware('subscription.active')->group(function () {
+    Route::middleware(['subscription.active', 'company.setup'])->group(function () {
         Route::get('/dashboard', Tenant\DashboardController::class);
         Route::get('/reports/{kind}', [Tenant\ReportController::class, 'show']);
 

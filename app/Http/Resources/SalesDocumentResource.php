@@ -14,6 +14,8 @@ class SalesDocumentResource extends JsonResource
             'type' => $this->type,
             'number' => $this->number,
             'issued_at' => $this->issued_at?->toIso8601String(),
+            'expires_at' => $this->expires_at?->toIso8601String(),
+            'is_expired' => $this->isExpired(),
             'payment_status' => $this->payment_status,
             'payment_method_id' => $this->payment_method_id,
             'voided_at' => $this->voided_at?->toIso8601String(),

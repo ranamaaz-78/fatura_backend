@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureActiveSubscription;
+use App\Http\Middleware\EnsureCompanySetup;
 use App\Http\Middleware\EnsureRole;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -18,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => EnsureRole::class,
             'subscription.active' => EnsureActiveSubscription::class,
+            'company.setup' => EnsureCompanySetup::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

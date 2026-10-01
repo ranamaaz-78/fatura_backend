@@ -12,6 +12,7 @@ use App\Models\Subscription;
 use App\Services\NotificationLogger;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
+use Throwable;
 
 class RemindExpiringSubscriptions extends Command
 {
@@ -51,12 +52,23 @@ class RemindExpiringSubscriptions extends Command
                     continue;
                 }
 
-                Mail::to($owner->email)->queue(new SubscriptionExpiringMail($owner, $company, $subscription, (int) $days));
+                // Sent from the scheduler itself, so this works without a queue worker running.
+                $emailError = null;
 
-                $logger->log(NotificationChannel::Email, $type, $owner->email, NotificationStatus::Queued, [
-                    'company_id' => $company->id,
-                    'user_id' => $owner->id,
-                ]);
+                try {
+                    Mail::to($owner->email)->sendNow(new SubscriptionExpiringMail($owner, $company, $subscription, (int) $days));
+                } catch (Throwable $e) {
+                    $emailError = $e->getMessage();
+                    $this->warn("Could not email {$owner->email}: {$emailError}");
+                }
+
+                $logger->log(
+                    NotificationChannel::Email,
+                    $type,
+                    $owner->email,
+                    $emailError === null ? NotificationStatus::Sent : NotificationStatus::Failed,
+                    ['company_id' => $company->id, 'user_id' => $owner->id, 'error' => $emailError],
+                );
 
                 $number = $owner->whatsapp ?: $owner->phone;
 
@@ -83,7 +95,7 @@ class RemindExpiringSubscriptions extends Command
             }
         }
 
-        $this->info("Queued {$sent} reminder(s).");
+        $this->info("Sent {$sent} reminder(s).");
 
         return self::SUCCESS;
     }

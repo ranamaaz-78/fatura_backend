@@ -5,16 +5,15 @@ namespace App\Mail;
 use App\Models\Company;
 use App\Models\Subscription;
 use App\Models\User;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class AccountReadyMail extends Mailable implements ShouldQueue
+/** Sent straight away: the admin who created the account needs to know whether it left. */
+class AccountReadyMail extends Mailable
 {
-    use Queueable, SerializesModels;
+    use SerializesModels;
 
     public function __construct(
         public User $owner,

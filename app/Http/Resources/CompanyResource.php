@@ -14,13 +14,17 @@ class CompanyResource extends JsonResource
             'name' => $this->name,
             'slug' => $this->slug,
             'email' => $this->email,
+            'tax_id' => $this->tax_id,
             'phone' => $this->phone,
             'whatsapp' => $this->whatsapp,
             'address' => $this->address,
             'city' => $this->city,
+            'postal_code' => $this->postal_code,
             'country' => $this->country,
             'currency' => $this->currency,
             'logo_url' => $this->logo_path ? '/app/company/logo' : null,
+            'profile_complete' => $this->isProfileComplete(),
+            'missing_fields' => $this->missingProfileFields(),
             'status' => $this->status->value,
             'notes' => $this->notes,
             'created_at' => $this->created_at?->toIso8601String(),
@@ -29,6 +33,23 @@ class CompanyResource extends JsonResource
             'active_subscription' => new SubscriptionResource($this->whenLoaded('activeSubscription')),
             'latest_subscription' => new SubscriptionResource($this->whenLoaded('latestSubscription')),
             'subscriptions' => SubscriptionResource::collection($this->whenLoaded('subscriptions')),
+            'subscription_state' => $this->subscriptionState(),
         ];
+    }
+
+    /** none, active, expiring (ends within a week) or expired. Needs the subscription relations loaded. */
+    private function subscriptionState(): ?string
+    {
+        if (! $this->relationLoaded('activeSubscription') || ! $this->relationLoaded('latestSubscription')) {
+            return null;
+        }
+
+        $active = $this->activeSubscription;
+
+        if ($active !== null && $active->isUsable((int) config('fatura.subscriptions.grace_days'))) {
+            return $active->daysLeft() <= 7 ? 'expiring' : 'active';
+        }
+
+        return $this->latestSubscription === null ? 'none' : 'expired';
     }
 }

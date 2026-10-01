@@ -37,6 +37,7 @@ class SaleIssuer
                 'type' => $input['type'],
                 'number' => $this->numbers->take($companyId, $input['type'], (int) $issuedAt->year),
                 'issued_at' => $issuedAt,
+                'expires_at' => $input['type'] === 'quotation' ? SalesDocument::expiryFor($issuedAt) : null,
                 'payment_status' => $input['payment_status'],
                 'payment_method_id' => $this->resolvePaymentMethod($companyId, $input),
                 'client_code' => $customer?->code ?? (($input['client_code'] ?? '') !== '' ? $input['client_code'] : null),
@@ -77,7 +78,9 @@ class SaleIssuer
                 throw ValidationException::withMessages([
                     'type' => $document->isConverted()
                         ? __('This quotation has already been converted.')
-                        : __('Only a quotation can be edited.'),
+                        : ($document->isExpired()
+                            ? __('This quotation expired on :date and can no longer be edited.', ['date' => $document->expires_at->toFormattedDateString()])
+                            : __('Only a quotation can be edited.')),
                 ]);
             }
 
@@ -94,6 +97,8 @@ class SaleIssuer
             $document->update([
                 'customer_id' => $customer?->id,
                 'issued_at' => $input['issued_at'],
+                // The week runs from the date written on the quotation, so moving that date moves the end too.
+                'expires_at' => SalesDocument::expiryFor($input['issued_at']),
                 'client_code' => $customer?->code ?? (($input['client_code'] ?? '') !== '' ? $input['client_code'] : $document->client_code),
                 'client_name' => $input['client_name'],
                 'client_company' => ($input['client_company'] ?? '') !== '' ? $input['client_company'] : null,
@@ -132,7 +137,9 @@ class SaleIssuer
                 throw ValidationException::withMessages([
                     'type' => $document->isConverted()
                         ? __('This quotation has already been converted.')
-                        : __('Only an open quotation can be converted.'),
+                        : ($document->isExpired()
+                            ? __('This quotation expired on :date and can no longer be converted.', ['date' => $document->expires_at->toFormattedDateString()])
+                            : __('Only an open quotation can be converted.')),
                 ]);
             }
 

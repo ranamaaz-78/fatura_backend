@@ -2,277 +2,160 @@
 
 namespace App\Services\WhatsApp;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
+/**
+ * Talks to the Node WhatsApp service. That service holds one session per company and trusts
+ * only calls that carry the shared secret, so every request goes through http() below.
+ *
+ * Every method returns an array. A failure carries `error` (a message fit to show) and `code`:
+ *   SERVICE_OFFLINE  the service is not running or not reachable
+ *   SERVICE_AUTH     the service refused our secret (the two .env files disagree)
+ *   SERVICE_ERROR    the service answered with an error of its own
+ */
 class WhatsAppMicroserviceClient
 {
-    protected string $baseUrl;
-    protected string $servicePath;
-    protected bool $autoStart;
-    protected string $secret;
+    public const OFFLINE = 'SERVICE_OFFLINE';
 
-    /** Track whether we already attempted auto-start in this process lifetime. */
-    protected static bool $startAttempted = false;
+    public const AUTH = 'SERVICE_AUTH';
+
+    public const ERROR = 'SERVICE_ERROR';
+
+    protected string $baseUrl;
 
     public function __construct()
     {
-        $this->baseUrl = rtrim(config('fatura.whatsapp_service.url', 'http://127.0.0.1:3333'), '/');
-        $this->servicePath = config('fatura.whatsapp_service.path', base_path('../whatsapp_service'));
-        $this->autoStart = (bool) config('fatura.whatsapp_service.auto_start', true);
-        $this->secret = (string) config('fatura.whatsapp_service.secret', '');
+        $this->baseUrl = rtrim((string) config('fatura.whatsapp_service.url', 'http://127.0.0.1:3333'), '/');
     }
 
-    /** Every call to the microservice carries the shared secret. */
-    protected function http(int $timeout): PendingRequest
+    private function http(int $timeout): PendingRequest
     {
-        return Http::timeout($timeout)->withHeaders(['X-Service-Secret' => $this->secret]);
+        return Http::baseUrl($this->baseUrl)
+            ->timeout($timeout)
+            ->acceptJson()
+            ->withHeaders(['X-Service-Secret' => (string) config('fatura.whatsapp_service.secret')]);
     }
 
     /**
-     * Check if microservice is alive.
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
      */
+    private function call(string $method, string $path, array $data = [], int $timeout = 10, string $fallbackError = 'WhatsApp request failed.'): array
+    {
+        try {
+            $response = $method === 'get'
+                ? $this->http($timeout)->get($path)
+                : $this->http($timeout)->post($path, $data);
+        } catch (ConnectionException $e) {
+            Log::warning("WhatsApp service unreachable ({$path}): ".$e->getMessage());
+
+            return ['error' => __('WhatsApp is not available right now. Please try again in a moment.'), 'code' => self::OFFLINE];
+        } catch (Throwable $e) {
+            Log::error("WhatsApp service call failed ({$path}): ".$e->getMessage());
+
+            return ['error' => __('WhatsApp is not available right now. Please try again in a moment.'), 'code' => self::ERROR];
+        }
+
+        return $this->read($response, $path, $fallbackError);
+    }
+
+    /** @return array<string, mixed> */
+    private function read(Response $response, string $path, string $fallbackError): array
+    {
+        if ($response->status() === 401) {
+            Log::error("WhatsApp service refused our secret ({$path}). WHATSAPP_SERVICE_SECRET must match in both .env files.");
+
+            return ['error' => __('WhatsApp is not set up correctly on the server. Please contact support.'), 'code' => self::AUTH];
+        }
+
+        if (! $response->successful()) {
+            return ['error' => (string) ($response->json('error') ?: __($fallbackError)), 'code' => self::ERROR];
+        }
+
+        return $response->json() ?? [];
+    }
+
+    /** Is the service running? The health route needs no secret. */
     public function isAlive(): bool
     {
         try {
-            $response = Http::timeout(3)->get("{$this->baseUrl}/health");
-            return $response->successful();
+            return Http::baseUrl($this->baseUrl)->timeout(3)->get('/health')->successful();
         } catch (Throwable) {
             return false;
         }
     }
 
     /**
-     * Ensure the WhatsApp Node service is running.
-     * If it's not alive and auto_start is enabled, start it in the background.
-     */
-    public function ensureRunning(): void
-    {
-        if ($this->isAlive()) {
-            return;
-        }
-
-        if (!$this->autoStart || static::$startAttempted) {
-            return;
-        }
-
-        static::$startAttempted = true;
-
-        $indexJs = str_replace('/', DIRECTORY_SEPARATOR, $this->servicePath) . DIRECTORY_SEPARATOR . 'index.js';
-
-        if (!file_exists($indexJs)) {
-            Log::warning("WhatsApp service index.js not found at: {$indexJs}");
-            return;
-        }
-
-        $servicePath = str_replace('/', DIRECTORY_SEPARATOR, $this->servicePath);
-
-        try {
-            if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-                // Windows: use WMI Win32_Process.Create for a truly OS-level detached process.
-                // This survives after the parent PHP process exits.
-                $batFile = $servicePath . DIRECTORY_SEPARATOR . 'start.bat';
-                $escaped = str_replace("'", "''", $batFile);
-                $cmd = "powershell -Command \"([wmiclass]'Win32_Process').Create('cmd /c \\\"{$escaped}\\\"')\"";
-                exec($cmd);
-            } else {
-                // Linux/Mac: nohup + background
-                $cmd = "cd " . escapeshellarg($servicePath) . " && nohup node index.js > /dev/null 2>&1 &";
-                exec($cmd);
-            }
-
-            Log::info("WhatsApp service auto-started from: {$servicePath}");
-
-            // Wait up to 8 seconds for the service to become available
-            $attempts = 0;
-            while ($attempts < 16) {
-                usleep(500000); // 500ms
-                $attempts++;
-                if ($this->isAlive()) {
-                    Log::info("WhatsApp service is now alive after {$attempts} attempts.");
-                    return;
-                }
-            }
-
-            Log::warning('WhatsApp service was started but did not become alive within 8 seconds.');
-        } catch (Throwable $e) {
-            Log::error('Failed to auto-start WhatsApp service: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Initialize or retrieve instance session and return QR code if needed.
+     * Start (or pick up) a company's session and return its QR code when it needs scanning.
      *
-     * @return array{instanceName: string, status: string, qrcode: ?string, phone: ?string, error?: string}
+     * @return array{instanceName?: string, status?: string, qrcode?: ?string, phone?: ?string, error?: string, code?: string}
      */
     public function initInstance(string $instanceName): array
     {
-        $this->ensureRunning();
-
-        try {
-            $response = $this->http(10)->post("{$this->baseUrl}/instance/init", [
-                'instanceName' => $instanceName,
-            ]);
-
-            if ($response->successful()) {
-                return $response->json();
-            }
-
-            return [
-                'instanceName' => $instanceName,
-                'status' => 'disconnected',
-                'qrcode' => null,
-                'phone' => null,
-                'error' => $response->json('error') ?? 'Failed to initialize WhatsApp instance.',
-            ];
-        } catch (Throwable $e) {
-            Log::warning('WhatsApp microservice initInstance error: ' . $e->getMessage());
-            return [
-                'instanceName' => $instanceName,
-                'status' => 'disconnected',
-                'qrcode' => null,
-                'phone' => null,
-                'error' => 'WhatsApp service is unreachable. Please ensure WhatsApp service is running.',
-            ];
-        }
+        return $this->call('post', '/instance/init', ['instanceName' => $instanceName], 15, 'Could not start WhatsApp.');
     }
 
     /**
-     * Get live instance connection status.
+     * Live state of a session.
      *
-     * @return array{instanceName: string, status: string, phone: ?string, qrcode: ?string, name?: ?string, error?: string}
+     * @return array{status: string, phone?: ?string, qrcode?: ?string, name?: ?string, error?: string, code?: string}
      */
     public function getStatus(string $instanceName): array
     {
-        $this->ensureRunning();
+        $result = $this->call('get', "/instance/status/{$instanceName}", [], 6, 'Could not read the WhatsApp status.');
 
-        try {
-            $response = $this->http(5)->get("{$this->baseUrl}/instance/status/".rawurlencode($instanceName)."");
-
-            if ($response->successful()) {
-                return $response->json();
-            }
-
-            return [
-                'instanceName' => $instanceName,
-                'status' => 'disconnected',
-                'phone' => null,
-                'qrcode' => null,
-                'name' => null,
-            ];
-        } catch (Throwable $e) {
-            Log::warning('WhatsApp microservice getStatus error: ' . $e->getMessage());
-            return [
-                'instanceName' => $instanceName,
-                'status' => 'service_offline',
-                'phone' => null,
-                'qrcode' => null,
-                'name' => null,
-                'error' => 'WhatsApp service offline',
-            ];
+        if (isset($result['error'])) {
+            return $result + ['status' => $result['code'] === self::AUTH ? 'service_misconfigured' : 'service_offline'];
         }
+
+        return $result;
     }
 
-    /**
-     * Logout and destroy instance session.
-     */
+    /** Disconnect a session and remove it from the service. */
     public function logoutInstance(string $instanceName): array
     {
-        try {
-            $response = $this->http(8)->post("{$this->baseUrl}/instance/logout/".rawurlencode($instanceName)."");
-            return $response->json() ?? ['success' => true];
-        } catch (Throwable $e) {
-            Log::warning('WhatsApp microservice logoutInstance error: ' . $e->getMessage());
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
+        return $this->call('post', "/instance/logout/{$instanceName}", [], 10, 'Could not disconnect WhatsApp.');
     }
 
-    /**
-     * Check if a phone number is registered on WhatsApp.
-     */
+    /** @return array{exists?: bool, error?: string, code?: string} */
     public function checkNumber(string $instanceName, string $number): array
     {
-        try {
-            $response = $this->http(8)->get("{$this->baseUrl}/instance/check-number/".rawurlencode($instanceName)."/".rawurlencode($number)."");
-            return $response->json() ?? ['exists' => false];
-        } catch (Throwable $e) {
-            return ['exists' => true, 'warning' => 'Could not verify number registration: ' . $e->getMessage()];
-        }
+        return $this->call('get', "/instance/check-number/{$instanceName}/{$number}", [], 8, 'Could not check that number.');
     }
 
     /**
-     * Send a document (PDF) via WhatsApp.
+     * Send a PDF.
      *
-     * @return array{success: boolean, messageId?: string, error?: string}
+     * @return array{success?: bool, messageId?: string, error?: string, code?: string}
      */
-    public function sendDocument(
-        string $instanceName,
-        string $number,
-        string $fileBase64,
-        string $filename,
-        string $caption = ''
-    ): array {
-        $this->ensureRunning();
-
-        try {
-            $response = $this->http(25)->post("{$this->baseUrl}/message/send-document", [
-                'instanceName' => $instanceName,
-                'number' => $number,
-                'fileBase64' => $fileBase64,
-                'filename' => $filename,
-                'caption' => $caption,
-                'mimetype' => 'application/pdf',
-            ]);
-
-            if ($response->successful()) {
-                return $response->json();
-            }
-
-            return [
-                'success' => false,
-                'error' => $response->json('error') ?? 'Failed to send WhatsApp document.',
-            ];
-        } catch (Throwable $e) {
-            Log::error('WhatsApp microservice sendDocument error: ' . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'WhatsApp service error: ' . $e->getMessage(),
-            ];
-        }
+    public function sendDocument(string $instanceName, string $number, string $fileBase64, string $filename, string $caption = ''): array
+    {
+        return $this->call('post', '/message/send-document', [
+            'instanceName' => $instanceName,
+            'number' => $number,
+            'fileBase64' => $fileBase64,
+            'filename' => $filename,
+            'caption' => $caption,
+            'mimetype' => 'application/pdf',
+        ], 30, 'Failed to send the WhatsApp document.');
     }
 
     /**
-     * Send a text message via WhatsApp.
+     * Send a text message.
      *
-     * @return array{success: boolean, messageId?: string, error?: string}
+     * @return array{success?: bool, messageId?: string, error?: string, code?: string}
      */
     public function sendText(string $instanceName, string $number, string $message): array
     {
-        $this->ensureRunning();
-
-        try {
-            $response = $this->http(15)->post("{$this->baseUrl}/message/send-text", [
-                'instanceName' => $instanceName,
-                'number' => $number,
-                'message' => $message,
-            ]);
-
-            if ($response->successful()) {
-                return $response->json();
-            }
-
-            return [
-                'success' => false,
-                'error' => $response->json('error') ?? 'Failed to send WhatsApp message.',
-            ];
-        } catch (Throwable $e) {
-            Log::error('WhatsApp microservice sendText error: ' . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'WhatsApp service error: ' . $e->getMessage(),
-            ];
-        }
+        return $this->call('post', '/message/send-text', [
+            'instanceName' => $instanceName,
+            'number' => $number,
+            'message' => $message,
+        ], 15, 'Failed to send the WhatsApp message.');
     }
 }
