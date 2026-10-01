@@ -23,6 +23,7 @@ class Customer extends Model
         'phone',
         'nif',
         'nie',
+        'address',
         'is_active',
     ];
 

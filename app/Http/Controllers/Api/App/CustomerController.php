@@ -105,9 +105,10 @@ class CustomerController extends Controller
             'phone' => ['nullable', 'string', 'max:40'],
             'nif' => ['nullable', 'string', 'max:32'],
             'nie' => ['nullable', 'string', 'max:32'],
+            'address' => ['nullable', 'string', 'max:255'],
         ]);
 
-        foreach (['company_name', 'phone', 'nif', 'nie'] as $field) {
+        foreach (['company_name', 'phone', 'nif', 'nie', 'address'] as $field) {
             $data[$field] = ($data[$field] ?? '') !== '' ? $data[$field] : null;
         }
 

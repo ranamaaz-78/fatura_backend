@@ -313,6 +313,7 @@ class SaleController extends Controller
             'client_phone' => ['nullable', 'string', 'max:40'],
             'client_nif' => ['nullable', 'string', 'max:32'],
             'client_nie' => ['nullable', 'string', 'max:32'],
+            'client_address' => ['nullable', 'string', 'max:255'],
             // A discount on the whole bill: a percentage, or an amount in cents.
             'discount_type' => ['nullable', Rule::in(['percent', 'amount'])],
             'discount_value' => ['nullable', 'required_with:discount_type', 'numeric', 'min:0'],

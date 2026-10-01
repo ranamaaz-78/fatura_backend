@@ -41,6 +41,7 @@ class SalesDocument extends Model
         'client_phone',
         'client_nif',
         'client_nie',
+        'client_address',
         'notes',
         'base_cents',
         'tax_cents',

@@ -45,6 +45,7 @@ class SalesDocumentResource extends JsonResource
             'client_phone' => $this->client_phone,
             'client_nif' => $this->client_nif,
             'client_nie' => $this->client_nie,
+            'client_address' => $this->client_address,
             'notes' => $this->notes,
             'base_cents' => $this->base_cents,
             'tax_cents' => $this->tax_cents,
