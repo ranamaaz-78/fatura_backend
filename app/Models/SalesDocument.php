@@ -84,6 +84,19 @@ class SalesDocument extends Model
         return $this->belongsTo(self::class, 'converted_to_id');
     }
 
+    /** What a document of this type is called to the customer. */
+    public static function typeLabel(string $type): string
+    {
+        return match ($type) {
+            'factura' => __('Invoice'),
+            'albaran' => __('Delivery note'),
+            'quotation' => __('Quotation'),
+            'proforma' => __('Proforma'),
+            'abono' => __('Credit note'),
+            default => ucfirst($type),
+        };
+    }
+
     /** A quotation promises nothing, so it never moves stock. An abono puts the goods back. */
     public static function stockDirectionFor(string $type): int
     {

@@ -198,6 +198,7 @@ class ConvertApplicationTest extends TestCase
     public function test_a_mail_failure_still_creates_the_account_and_tells_the_admin(): void
     {
         Mail::shouldReceive('to')->andReturnSelf();
+        Mail::shouldReceive('locale')->andReturnSelf();
         Mail::shouldReceive('sendNow')->andThrow(new \RuntimeException('smtp down'));
 
         $plan = Plan::factory()->create();

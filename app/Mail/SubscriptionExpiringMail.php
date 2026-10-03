@@ -24,9 +24,8 @@ class SubscriptionExpiringMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: __('Your :app subscription ends in :days day(s)', [
+            subject: trans_choice('Your :app subscription ends in :count day|Your :app subscription ends in :count days', $this->daysLeft, [
                 'app' => config('app.name'),
-                'days' => $this->daysLeft,
             ]),
         );
     }

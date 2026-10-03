@@ -96,13 +96,13 @@ class PrintTemplate extends Model
     /**
      * @return array<string, array{primary_color: string, font_key: string, footer_notes: string, notes: string, show_logo: bool, show_signature: bool}>
      */
-    public static function defaults(): array
+    public static function defaults(?string $locale = null): array
     {
         return [
             'factura' => [
                 'primary_color' => self::DEFAULT_COLOR,
                 'font_key' => 'geist',
-                'footer_notes' => 'Thank you for your business.',
+                'footer_notes' => __('Thank you for your business.', [], $locale),
                 'notes' => '',
                 'show_logo' => true,
                 'show_signature' => false,
@@ -110,7 +110,7 @@ class PrintTemplate extends Model
             'albaran' => [
                 'primary_color' => self::DEFAULT_COLOR,
                 'font_key' => 'geist',
-                'footer_notes' => 'This delivery note is not a tax invoice.',
+                'footer_notes' => __('This delivery note is not a tax invoice.', [], $locale),
                 'notes' => '',
                 'show_logo' => false,
                 'show_signature' => true,
@@ -118,7 +118,7 @@ class PrintTemplate extends Model
             'quotation' => [
                 'primary_color' => self::DEFAULT_COLOR,
                 'font_key' => 'geist',
-                'footer_notes' => "Prices shown both without and with tax, at the rates in force today.\nDelivery starts once the quotation is accepted in writing.\nStock is not reserved until acceptance.",
+                'footer_notes' => __("Prices shown both without and with tax, at the rates in force today.\nDelivery starts once the quotation is accepted in writing.\nStock is not reserved until acceptance.", [], $locale),
                 'notes' => '',
                 'show_logo' => true,
                 'show_signature' => false,
@@ -126,7 +126,7 @@ class PrintTemplate extends Model
             'proforma' => [
                 'primary_color' => self::DEFAULT_COLOR,
                 'font_key' => 'geist',
-                'footer_notes' => 'Proforma document. Not a tax invoice and not a payment request.',
+                'footer_notes' => __('Proforma document. Not a tax invoice and not a payment request.', [], $locale),
                 'notes' => '',
                 'show_logo' => true,
                 'show_signature' => false,
@@ -134,9 +134,9 @@ class PrintTemplate extends Model
         ];
     }
 
-    public static function seedDefaults(int $companyId): void
+    public static function seedDefaults(int $companyId, ?string $locale = null): void
     {
-        foreach (self::defaults() as $type => $row) {
+        foreach (self::defaults($locale) as $type => $row) {
             static::withoutGlobalScopes()->firstOrCreate(
                 ['company_id' => $companyId, 'type' => $type],
                 $row,
@@ -147,9 +147,9 @@ class PrintTemplate extends Model
     /**
      * @return array{primary_color: string, font_key: string, footer_notes: string, notes: string, show_logo: bool, show_signature: bool}
      */
-    public static function defaultFor(string $type): array
+    public static function defaultFor(string $type, ?string $locale = null): array
     {
-        return self::defaults()[$type];
+        return self::defaults($locale)[$type];
     }
 
     /** The note a new document of this type is stamped with, or null when none is set. */

@@ -9,6 +9,7 @@ use App\Models\Company;
 use App\Models\NotificationLog;
 use App\Models\SalesDocument;
 use App\Services\WhatsApp\WhatsAppMicroserviceClient;
+use App\Support\Fmt;
 use App\Support\Phone;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -242,9 +243,14 @@ class WhatsAppController extends Controller
 
         $caption = $data['caption'] ?? null;
         if (empty($caption)) {
-            $totalFormatted = number_format($sale->total_cents / 100, 2).' '.$company->currency;
-            $typeLabel = ucfirst($sale->type);
-            $caption = "Dear {$sale->client_name},\n\nPlease find attached your {$typeLabel} *#{$sale->number}* from *{$company->name}* for *{$totalFormatted}*.\n\nThank you for choosing us!";
+            $totalFormatted = Fmt::money($sale->total_cents / 100).' '.$company->currency;
+            $caption = __("Dear :customer,\n\nPlease find attached your :type *#:number* from *:company* for *:total*.\n\nThank you for choosing us!", [
+                'customer' => $sale->client_name,
+                'type' => SalesDocument::typeLabel($sale->type),
+                'number' => $sale->number,
+                'company' => $company->name,
+                'total' => $totalFormatted,
+            ]);
         }
 
         $filename = $data['filename'] ?: "{$sale->number}.pdf";
@@ -307,7 +313,7 @@ class WhatsAppController extends Controller
         }
 
         $waDigits = Phone::waDigits($target) ?: preg_replace('/\D+/', '', $target);
-        $message = ($data['message'] ?? null) ?: "Hello from {$company->name}! This is a test message from YK Digital Solutions. Your WhatsApp is connected.";
+        $message = ($data['message'] ?? null) ?: __('Hello from :company! This is a test message from YK Digital Solutions. Your WhatsApp is connected.', ['company' => $company->name]);
 
         $result = $this->client->sendText($instanceName, $waDigits, $message);
 

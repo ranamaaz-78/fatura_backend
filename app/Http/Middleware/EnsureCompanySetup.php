@@ -20,7 +20,7 @@ class EnsureCompanySetup
             return $next($request);
         }
 
-        if ($request->is('api/app/company', 'api/app/company/logo')) {
+        if ($request->is('api/app/company', 'api/app/company/logo', 'api/app/company/locale')) {
             return $next($request);
         }
 

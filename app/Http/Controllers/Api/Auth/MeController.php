@@ -23,6 +23,8 @@ class MeController extends Controller
         return $this->success([
             'user' => new UserResource($user),
             'role' => $user->role->value,
+            // The language this person sees: their own, else their company's, else the default.
+            'locale' => $user->preferredLocale(),
             'company' => $company ? new CompanyResource($company) : null,
             'subscription' => $subscription ? new SubscriptionResource($subscription) : null,
             'support' => [

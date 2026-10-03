@@ -6,6 +6,7 @@ use App\Enums\CompanyStatus;
 use App\Enums\SubscriptionStatus;
 use App\Enums\UserRole;
 use App\Support\Phone;
+use App\Support\Locales;
 use App\Support\Text;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -34,6 +35,7 @@ class Company extends Model
         'postal_code',
         'country',
         'currency',
+        'locale',
         'logo_path',
         'status',
         'notes',
@@ -161,8 +163,9 @@ class Company extends Model
         static::created(function (Company $company) {
             TaxRate::seedDefaults($company->id);
             RecargoRate::seedDefaults($company->id);
-            CompanyPaymentMethod::seedDefaults($company->id);
-            PrintTemplate::seedDefaults($company->id);
+            $locale = Locales::normalize($company->locale) ?? Locales::DEFAULT;
+            CompanyPaymentMethod::seedDefaults($company->id, $locale);
+            PrintTemplate::seedDefaults($company->id, $locale);
         });
     }
 }

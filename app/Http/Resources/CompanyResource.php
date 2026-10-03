@@ -22,6 +22,7 @@ class CompanyResource extends JsonResource
             'postal_code' => $this->postal_code,
             'country' => $this->country,
             'currency' => $this->currency,
+            'locale' => $this->locale,
             'logo_url' => $this->logo_path ? '/app/company/logo' : null,
             'profile_complete' => $this->isProfileComplete(),
             'missing_fields' => $this->missingProfileFields(),

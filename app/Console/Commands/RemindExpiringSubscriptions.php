@@ -10,6 +10,8 @@ use App\Mail\SubscriptionExpiringMail;
 use App\Models\NotificationLog;
 use App\Models\Subscription;
 use App\Services\NotificationLogger;
+use App\Support\Fmt;
+use App\Support\Locales;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
@@ -52,11 +54,13 @@ class RemindExpiringSubscriptions extends Command
                     continue;
                 }
 
+                $locale = Locales::normalize($company->locale) ?? Locales::DEFAULT;
+
                 // Sent from the scheduler itself, so this works without a queue worker running.
                 $emailError = null;
 
                 try {
-                    Mail::to($owner->email)->sendNow(new SubscriptionExpiringMail($owner, $company, $subscription, (int) $days));
+                    Mail::to($owner->email)->locale($locale)->sendNow(new SubscriptionExpiringMail($owner, $company, $subscription, (int) $days));
                 } catch (Throwable $e) {
                     $emailError = $e->getMessage();
                     $this->warn("Could not email {$owner->email}: {$emailError}");
@@ -73,14 +77,15 @@ class RemindExpiringSubscriptions extends Command
                 $number = $owner->whatsapp ?: $owner->phone;
 
                 if (filled($number)) {
-                    $result = $whatsapp->send($number, __(
-                        'Your :app subscription for :company ends in :days day(s), on :date. Reply here to renew.',
+                    $result = $whatsapp->send($number, trans_choice(
+                        'Your :app subscription for :company ends in :count day, on :date. Reply here to renew.|Your :app subscription for :company ends in :count days, on :date. Reply here to renew.',
+                        (int) $days,
                         [
                             'app' => config('app.name'),
                             'company' => $company->name,
-                            'days' => $days,
-                            'date' => $subscription->ends_at->toFormattedDateString(),
+                            'date' => Fmt::date($subscription->ends_at, $locale),
                         ],
+                        $locale,
                     ));
 
                     $logger->log(NotificationChannel::WhatsApp, $type, $number, $result->status, [

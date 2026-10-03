@@ -15,6 +15,16 @@ class PlanSeeder extends Seeder
             [
                 'name' => 'Starter',
                 'description' => 'Everything a small business needs to invoice clients and get paid.',
+                'name_es' => 'Starter',
+                'description_es' => 'Todo lo que un pequeño negocio necesita para facturar a sus clientes y cobrar.',
+                'features_es' => [
+                    'Facturas ilimitadas',
+                    'Clientes ilimitados',
+                    'Presupuestos y albaranes',
+                    'Pagos y pagos parciales',
+                    'Exportación e impresión en PDF',
+                    'Soporte por email',
+                ],
                 'price' => 20.00,
                 'currency' => 'USD',
                 'interval' => PlanInterval::Month,

@@ -58,6 +58,7 @@ Route::middleware(['auth:sanctum', 'role:super_admin'])->prefix('admin')->group(
     Route::post('/payment-methods/{paymentMethod}/toggle', [Admin\PaymentMethodController::class, 'toggle']);
     Route::delete('/payment-methods/{paymentMethod}', [Admin\PaymentMethodController::class, 'destroy']);
 
+    Route::patch('/me/locale', [Admin\LocaleController::class, 'update']);
     Route::get('/companies', [Admin\CompanyController::class, 'index']);
     Route::get('/companies/{company}', [Admin\CompanyController::class, 'show']);
     Route::patch('/companies/{company}/status', [Admin\CompanyController::class, 'updateStatus']);
@@ -144,6 +145,7 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::post('/print-templates/{type}/copy', [Tenant\PrintTemplateController::class, 'copy'])
             ->whereIn('type', ['factura', 'albaran', 'quotation', 'proforma']);
 
+        Route::patch('/company/locale', [Tenant\CompanySettingsController::class, 'updateLocale']);
         Route::get('/company', [Tenant\CompanySettingsController::class, 'show']);
         Route::patch('/company', [Tenant\CompanySettingsController::class, 'update']);
         Route::patch('/password', [Tenant\PasswordController::class, 'update']);

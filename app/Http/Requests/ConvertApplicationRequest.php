@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\Locales;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -23,6 +24,7 @@ class ConvertApplicationRequest extends FormRequest
             'city' => ['nullable', 'string', 'max:120'],
             'country' => ['nullable', 'string', 'max:120'],
             'currency' => ['nullable', 'string', 'size:3'],
+            'locale' => ['nullable', Rule::in(Locales::SUPPORTED)],
 
             'owner_name' => ['required', 'string', 'max:255'],
             'owner_email' => ['required', 'email:rfc', 'max:255', Rule::unique('users', 'email')],

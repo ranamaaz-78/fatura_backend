@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers\Api\App;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CompanyResource;
 use App\Models\Company;
+use App\Services\CompanyLocale;
+use App\Support\Locales;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,6 +34,21 @@ class CompanySettingsController extends Controller
         $company->update($this->validated($request, $company));
 
         return $this->success(new CompanyResource($company->fresh()), __('Company details saved.'));
+    }
+
+    /** The company's language: its panel, documents, emails and WhatsApp messages. Only the owner chooses it. */
+    public function updateLocale(Request $request, CompanyLocale $locales): JsonResponse
+    {
+        abort_unless($request->user()->role === UserRole::BusinessAdmin, 403);
+
+        $company = $request->user()->company;
+        abort_unless($company, 404);
+
+        $data = $request->validate([
+            'locale' => ['required', 'string', Rule::in(Locales::SUPPORTED)],
+        ]);
+
+        return $this->success(new CompanyResource($locales->change($company, $data['locale'])), __('Language saved.'));
     }
 
     /**

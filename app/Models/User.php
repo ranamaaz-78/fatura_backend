@@ -6,17 +6,19 @@ use App\Enums\UserRole;
 use App\Enums\UserStatus;
 use App\Mail\PasswordResetMail;
 use App\Notifications\InvitePasswordNotification;
+use App\Support\Locales;
 use App\Support\Phone;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Contracts\Translation\HasLocalePreference;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\HasApiTokens;
 
-class User extends Authenticatable
+class User extends Authenticatable implements HasLocalePreference
 {
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, Notifiable;
@@ -30,6 +32,7 @@ class User extends Authenticatable
         'role',
         'company_id',
         'status',
+        'locale',
         'last_login_at',
     ];
 
@@ -59,6 +62,12 @@ class User extends Authenticatable
         return Attribute::set(fn (?string $value) => Phone::e164($value));
     }
 
+    /** What language this person is written to in: their own choice, else their company's. */
+    public function preferredLocale(): string
+    {
+        return Locales::normalize($this->locale) ?? Locales::normalize($this->company?->locale) ?? app()->getLocale();
+    }
+
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
@@ -81,7 +90,7 @@ class User extends Authenticatable
             .'/reset-password?token='.$token
             .'&email='.urlencode($this->getEmailForPasswordReset());
 
-        Mail::to($this->email)->send(new PasswordResetMail($this, $url));
+        Mail::to($this->email)->locale($this->preferredLocale())->send(new PasswordResetMail($this, $url));
     }
 
     public function sendInviteNotification(string $token): void

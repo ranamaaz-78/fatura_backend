@@ -49,6 +49,9 @@ class SubscriptionService
                 'plan_currency' => $plan->currency,
                 'plan_interval' => $interval,
                 'plan_features' => $plan->features,
+                'plan_translations' => filled($plan->name_es) || filled($plan->features_es)
+                    ? ['es' => ['name' => $plan->name_es, 'features' => $plan->features_es]]
+                    : null,
                 'status' => SubscriptionStatus::Active,
                 'starts_at' => $startsAt,
                 'ends_at' => $interval->advance($startsAt, $periods),

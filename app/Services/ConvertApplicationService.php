@@ -13,6 +13,7 @@ use App\Enums\UserStatus;
 use App\Models\Application;
 use App\Models\ApplicationActivity;
 use App\Models\Company;
+use App\Support\Locales;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
@@ -48,6 +49,7 @@ class ConvertApplicationService
                 'city' => $input['city'] ?? $application->city,
                 'country' => $input['country'] ?? $application->country,
                 'currency' => $input['currency'] ?? $plan->currency,
+                'locale' => Locales::normalize($input['locale'] ?? null) ?? Locales::normalize($application->locale) ?? Locales::DEFAULT,
                 'status' => CompanyStatus::Active,
             ]);
 

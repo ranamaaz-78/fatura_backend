@@ -16,7 +16,7 @@ class LinkWhatsAppSender implements WhatsAppSender
         $digits = Phone::waDigits($to);
 
         if ($digits === null) {
-            return WhatsAppResult::failed('Invalid WhatsApp number.');
+            return WhatsAppResult::failed(__('Invalid WhatsApp number.'));
         }
 
         return WhatsAppResult::link('https://wa.me/'.$digits.'?text='.rawurlencode($message));

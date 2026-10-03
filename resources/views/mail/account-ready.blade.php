@@ -30,10 +30,10 @@
                 <div style="font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#004ac6;">{{ __('Your plan') }}</div>
                 <div style="margin-top:6px;font-size:18px;font-weight:800;letter-spacing:-.01em;color:#0b1c30;">
                     {{ $subscription->plan_name }}
-                    <span style="font-size:14px;font-weight:500;color:#434655;">&nbsp;{{ $subscription->plan_currency }} {{ number_format((float) $subscription->plan_price, 2) }} / {{ $subscription->plan_interval->value }}</span>
+                    <span style="font-size:14px;font-weight:500;color:#434655;">&nbsp;{{ $subscription->plan_currency }} {{ \App\Support\Fmt::money((float) $subscription->plan_price) }} / {{ __($subscription->plan_interval->value) }}</span>
                 </div>
                 <div style="margin-top:4px;font-size:13.5px;color:#434655;">
-                    <span style="color:#007d55;">&#10003;</span> {{ __('Active until :date', ['date' => $subscription->ends_at->toFormattedDateString()]) }}
+                    <span style="color:#007d55;">&#10003;</span> {{ __('Active until :date', ['date' => \App\Support\Fmt::date($subscription->ends_at)]) }}
                 </div>
             </td>
         </tr>

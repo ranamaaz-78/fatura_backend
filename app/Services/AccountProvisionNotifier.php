@@ -8,6 +8,7 @@ use App\Enums\NotificationStatus;
 use App\Mail\AccountReadyMail;
 use App\Models\Application;
 use App\Models\Company;
+use App\Support\Locales;
 use App\Models\Subscription;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
@@ -31,6 +32,7 @@ class AccountProvisionNotifier
     public function sendAccountReady(User $owner, Company $company, Subscription $subscription, ?Application $application = null): AccountReadyDelivery
     {
         $url = $this->invites->urlFor($owner);
+        $locale = Locales::normalize($company->locale) ?? Locales::DEFAULT;
         $context = [
             'company_id' => $company->id,
             'user_id' => $owner->id,
@@ -40,7 +42,7 @@ class AccountProvisionNotifier
         $emailError = null;
 
         try {
-            Mail::to($owner->email)->sendNow(new AccountReadyMail($owner, $company, $subscription, $url));
+            Mail::to($owner->email)->locale($locale)->sendNow(new AccountReadyMail($owner, $company, $subscription, $url));
         } catch (Throwable $e) {
             $emailError = $e->getMessage();
             Log::error('Account-ready email failed: '.$emailError);
@@ -60,7 +62,7 @@ class AccountProvisionNotifier
             return new AccountReadyDelivery($emailError === null, $emailError);
         }
 
-        $result = $this->whatsapp->send($number, $this->message($owner, $company, $url));
+        $result = $this->whatsapp->send($number, $this->message($owner, $company, $url, $locale));
 
         $this->logger->log(
             NotificationChannel::WhatsApp,
@@ -79,13 +81,13 @@ class AccountProvisionNotifier
         return new AccountReadyDelivery($emailError === null, $emailError, $result->url);
     }
 
-    private function message(User $owner, Company $company, string $url): string
+    private function message(User $owner, Company $company, string $url, string $locale): string
     {
         return __(':greeting Your :app account for :company is ready. Set your password here: :url (the link expires in 48 hours).', [
-            'greeting' => __('Hi :name,', ['name' => $owner->name]),
+            'greeting' => __('Hi :name,', ['name' => $owner->name], $locale),
             'app' => config('app.name'),
             'company' => $company->name,
             'url' => $url,
-        ]);
+        ], $locale);
     }
 }

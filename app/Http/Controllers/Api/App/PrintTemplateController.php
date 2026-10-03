@@ -30,7 +30,7 @@ class PrintTemplateController extends Controller
     public function reset(Request $request, string $type): JsonResponse
     {
         $template = $this->template($request, $type);
-        $template->update(PrintTemplate::defaultFor($type));
+        $template->update(PrintTemplate::defaultFor($type, $request->user()->company?->locale));
 
         return $this->success($this->payload($request), __('Printable reset.'));
     }
@@ -65,7 +65,7 @@ class PrintTemplateController extends Controller
     private function payload(Request $request): array
     {
         $company = $request->user()->company;
-        PrintTemplate::seedDefaults((int) $company->id);
+        PrintTemplate::seedDefaults((int) $company->id, $company->locale);
 
         $order = array_flip(PrintTemplate::TYPES);
         $templates = PrintTemplate::query()
@@ -85,7 +85,7 @@ class PrintTemplateController extends Controller
         abort_unless(in_array($type, PrintTemplate::TYPES, true), 404);
 
         $companyId = (int) $request->user()->company_id;
-        PrintTemplate::seedDefaults($companyId);
+        PrintTemplate::seedDefaults($companyId, $request->user()->company?->locale);
 
         return PrintTemplate::query()->where('type', $type)->firstOrFail();
     }

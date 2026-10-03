@@ -102,6 +102,7 @@ class ApplicationController extends Controller
             'whatsapp' => $data['whatsapp'] ?? null,
             'city' => $data['city'] ?? null,
             'country' => $data['country'] ?? null,
+            'locale' => app()->getLocale(),
             'message' => $data['message'] ?? null,
             'plan_id' => $planId,
             'status' => ApplicationStatus::New,

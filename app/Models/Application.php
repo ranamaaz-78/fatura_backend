@@ -22,6 +22,7 @@ class Application extends Model
         'whatsapp',
         'city',
         'country',
+        'locale',
         'business_type',
         'team_size',
         'message',

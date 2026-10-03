@@ -4,21 +4,20 @@
 @extends('mail.layout')
 
 @section('title', __('Renewal reminder'))
-@section('preview', __('Your :plan subscription ends on :date. Renew to keep your account active.', ['plan' => $subscription->plan_name, 'date' => $subscription->ends_at->toFormattedDateString()]))
+@section('preview', __('Your :plan subscription ends on :date. Renew to keep your account active.', ['plan' => $subscription->plan_name, 'date' => \App\Support\Fmt::date($subscription->ends_at)]))
 @section('dot', '#f59e0b')
 @section('eyebrow', __('Renewal reminder'))
 @section('heading')
-    {{ __('Your subscription ends in') }}<br><span style="color:#4edea3;">{{ $daysLeft }} {{ __('day(s)') }}.</span>
+    {{ __('Your subscription ends in') }}<br><span style="color:#4edea3;">{{ trans_choice(':count day|:count days', $daysLeft) }}.</span>
 @endsection
 
 @section('content')
     <p style="margin:0 0 6px 0;font-size:16px;font-weight:700;color:#0b1c30;">{{ __('Hi :name,', ['name' => $owner->name]) }}</p>
     <p style="margin:0 0 24px 0;">
-        {{ __('The :plan subscription for :company ends on :date — that is :days day(s) from now.', [
+        {{ trans_choice('The :plan subscription for :company ends on :date — that is :count day from now.|The :plan subscription for :company ends on :date — that is :count days from now.', $daysLeft, [
             'plan' => $subscription->plan_name,
             'company' => $company->name,
-            'date' => $subscription->ends_at->toFormattedDateString(),
-            'days' => $daysLeft,
+            'date' => \App\Support\Fmt::date($subscription->ends_at),
         ]) }}
     </p>
 
@@ -27,7 +26,7 @@
             <td style="padding:18px 20px;">
                 <div style="font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#004ac6;">{{ __('Your plan') }}</div>
                 <div style="margin-top:6px;font-size:18px;font-weight:800;letter-spacing:-.01em;color:#0b1c30;">{{ $subscription->plan_name }}</div>
-                <div style="margin-top:4px;font-size:13.5px;color:#434655;">{{ __('Ends on :date', ['date' => $subscription->ends_at->toFormattedDateString()]) }}</div>
+                <div style="margin-top:4px;font-size:13.5px;color:#434655;">{{ __('Ends on :date', ['date' => \App\Support\Fmt::date($subscription->ends_at)]) }}</div>
             </td>
         </tr>
     </table>

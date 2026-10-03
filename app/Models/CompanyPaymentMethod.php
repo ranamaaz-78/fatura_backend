@@ -43,11 +43,11 @@ class CompanyPaymentMethod extends Model
         return $this->hasMany(SalesDocumentSettlement::class, 'payment_method_id');
     }
 
-    public static function seedDefaults(int $companyId): void
+    public static function seedDefaults(int $companyId, ?string $locale = null): void
     {
         foreach (self::DEFAULTS as $row) {
             static::withoutGlobalScopes()->firstOrCreate(
-                ['company_id' => $companyId, 'name' => $row['name']],
+                ['company_id' => $companyId, 'name' => __($row['name'], [], $locale)],
                 ['is_active' => true, 'sort_order' => $row['sort_order']],
             );
         }

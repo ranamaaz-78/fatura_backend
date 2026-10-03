@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\RecargoRate;
 use App\Models\SalesDocument;
 use App\Models\User;
+use App\Support\Fmt;
 use App\Support\SaleMath;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -79,7 +80,7 @@ class SaleIssuer
                     'type' => $document->isConverted()
                         ? __('This quotation has already been converted.')
                         : ($document->isExpired()
-                            ? __('This quotation expired on :date and can no longer be edited.', ['date' => $document->expires_at->toFormattedDateString()])
+                            ? __('This quotation expired on :date and can no longer be edited.', ['date' => Fmt::date($document->expires_at)])
                             : __('Only a quotation can be edited.')),
                 ]);
             }
@@ -138,7 +139,7 @@ class SaleIssuer
                     'type' => $document->isConverted()
                         ? __('This quotation has already been converted.')
                         : ($document->isExpired()
-                            ? __('This quotation expired on :date and can no longer be converted.', ['date' => $document->expires_at->toFormattedDateString()])
+                            ? __('This quotation expired on :date and can no longer be converted.', ['date' => Fmt::date($document->expires_at)])
                             : __('Only an open quotation can be converted.')),
                 ]);
             }

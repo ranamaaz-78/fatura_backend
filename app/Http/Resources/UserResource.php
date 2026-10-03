@@ -18,6 +18,7 @@ class UserResource extends JsonResource
             'role' => $this->role->value,
             'status' => $this->status->value,
             'company_id' => $this->company_id,
+            'locale' => $this->locale,
             'last_login_at' => $this->last_login_at?->toIso8601String(),
             'has_password' => $this->password !== null,
         ];

@@ -22,6 +22,7 @@ class Subscription extends Model
         'plan_currency',
         'plan_interval',
         'plan_features',
+        'plan_translations',
         'status',
         'starts_at',
         'ends_at',
@@ -35,6 +36,7 @@ class Subscription extends Model
             'plan_price' => 'decimal:2',
             'plan_interval' => PlanInterval::class,
             'plan_features' => 'array',
+            'plan_translations' => 'array',
             'status' => SubscriptionStatus::class,
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
@@ -50,6 +52,18 @@ class Subscription extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    /** The plan's Spanish wording as it was when this term began, when the request is in Spanish and there is one. */
+    public function translated(string $field): mixed
+    {
+        if (app()->getLocale() !== 'es') {
+            return null;
+        }
+
+        $value = $this->plan_translations['es'][$field] ?? null;
+
+        return filled($value) ? $value : null;
     }
 
     public function daysLeft(): int
