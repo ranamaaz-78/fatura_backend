@@ -67,8 +67,19 @@ class ProductImageController extends Controller
 
             $key = ImageName::key($name);
 
-            if (in_array($key, $takenKeys, true) || $this->keyTaken($companyId, $key)) {
+            if (in_array($key, $takenKeys, true)) {
                 $failed[] = ['file' => $label, 'message' => $this->duplicateMessage($name)];
+
+                continue;
+            }
+
+            // Already in the folder: say which one, so the person can choose to replace it or skip.
+            if ($existing = $this->existing($companyId, $key)) {
+                $failed[] = [
+                    'file' => $label,
+                    'message' => $this->duplicateMessage($name),
+                    'duplicate_of' => $existing->uuid,
+                ];
 
                 continue;
             }
@@ -116,6 +127,43 @@ class ProductImageController extends Controller
             ]),
             201,
         );
+    }
+
+    /**
+     * Puts a new picture in place of an existing one. The row, its name and every product that points at
+     * it stay as they are; only the file changes.
+     */
+    public function replace(Request $request, ProductImage $productImage): JsonResponse
+    {
+        $request->validate(['file' => ['required', 'file']]);
+
+        /** @var UploadedFile $file */
+        $file = $request->file('file');
+
+        if ($reason = $this->store->reject($file)) {
+            return $this->error($reason, 422, ['file' => [$reason]]);
+        }
+
+        $oldPath = $productImage->path;
+        $stored = $this->store->put($file, (int) $productImage->company_id);
+
+        try {
+            $productImage->update([
+                'path' => $stored['path'],
+                'mime' => $stored['mime'],
+                'size_bytes' => $stored['size'],
+            ]);
+        } catch (Throwable $e) {
+            $this->store->remove($stored['path']);
+
+            throw $e;
+        }
+
+        if (! $this->store->remove($oldPath)) {
+            Log::warning('Replaced product image left its old file behind: '.$oldPath);
+        }
+
+        return $this->success(new ProductImageResource($productImage->fresh()), __('File replaced.'));
     }
 
     /** Only the label moves. The file keeps the path it was written to. */
@@ -180,6 +228,14 @@ class ProductImageController extends Controller
             'Content-Type' => $productImage->mime,
             'Cache-Control' => 'private, max-age=600',
         ]);
+    }
+
+    private function existing(int $companyId, string $key): ?ProductImage
+    {
+        return ProductImage::withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->where('name_key', $key)
+            ->first();
     }
 
     private function keyTaken(int $companyId, string $key, ?int $ignoreId = null): bool

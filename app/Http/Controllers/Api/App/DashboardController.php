@@ -31,6 +31,7 @@ class DashboardController extends Controller
 
         $paidDocuments = (int) SalesDocument::query()
             ->whereIn('type', ['factura', 'albaran'])
+            ->whereNull('from_settlement_id')
             ->where('payment_status', 'paid')
             ->whereNull('voided_at')
             ->whereBetween('issued_at', $month)
@@ -171,7 +172,7 @@ class DashboardController extends Controller
             'company' => [
                 'id' => $company?->id,
                 'name' => $company?->name,
-                'currency' => $company?->currency ?? 'USD',
+                'currency' => $company?->currency ?? 'EUR',
             ],
             'kpis' => [
                 'outstanding' => (int) ($openTotals->outstanding_cents ?? 0),
@@ -211,6 +212,7 @@ class DashboardController extends Controller
     {
         return SalesDocument::query()
             ->whereIn('sales_documents.type', self::SALE_TYPES)
+            ->whereNull('sales_documents.from_settlement_id')
             ->whereNull('sales_documents.voided_at')
             ->when($range !== null, fn (Builder $query) => $query->whereBetween('sales_documents.issued_at', $range));
     }
@@ -226,7 +228,7 @@ class DashboardController extends Controller
 
     private function outstandingExpr(): string
     {
-        return 'CASE WHEN sales_documents.payment_status = \'paid\' THEN 0 WHEN sales_documents.total_cents > COALESCE(settled.settled_cents, 0) THEN sales_documents.total_cents - COALESCE(settled.settled_cents, 0) ELSE 0 END';
+        return 'CASE WHEN sales_documents.payment_status = \'paid\' THEN 0 WHEN sales_documents.total_cents - sales_documents.returned_cents > COALESCE(settled.settled_cents, 0) THEN sales_documents.total_cents - sales_documents.returned_cents - COALESCE(settled.settled_cents, 0) ELSE 0 END';
     }
 
     private function outstandingSumSql(): string

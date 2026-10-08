@@ -114,7 +114,7 @@ class ReportTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.kpis.document_count', 1)
             ->assertJsonPath('data.kpis.outstanding_cents', 1210)
-            ->assertJsonPath('data.rows.0.client_name', 'Walk-in');
+            ->assertJsonPath('data.rows.0.client_name', 'Walk-In');
     }
 
     public function test_payments_group_received_cents_by_method(): void
@@ -186,7 +186,7 @@ class ReportTest extends TestCase
             ->assertJsonPath('data.rows.0.client_name', 'Adeel')
             ->assertJsonPath('data.rows.0.document_count', 2)
             ->assertJsonPath('data.rows.0.total_cents', 2420)
-            ->assertJsonPath('data.rows.1.client_name', 'Walk-in')
+            ->assertJsonPath('data.rows.1.client_name', 'Walk-In')
             ->assertJsonPath('data.rows.1.outstanding_cents', 1210);
     }
 

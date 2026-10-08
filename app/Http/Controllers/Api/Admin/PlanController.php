@@ -104,6 +104,16 @@ class PlanController extends Controller
             'features_es' => ['nullable', 'array', 'max:30'],
             'features_es.*' => ['string', 'max:255'],
             'price' => [$required, 'numeric', 'min:0', 'max:99999999'],
+            'original_price' => [
+                'nullable', 'numeric', 'min:0', 'max:99999999',
+                function (string $attribute, mixed $value, \Closure $fail) use ($request, $plan) {
+                    $price = $request->input('price', $plan?->price);
+
+                    if ($value !== null && is_numeric($price) && (float) $value <= (float) $price) {
+                        $fail(__('The original price must be higher than the price.'));
+                    }
+                },
+            ],
             'currency' => ['nullable', 'string', 'size:3'],
             'interval' => [$required, Rule::in(PlanInterval::values())],
             'features' => ['nullable', 'array', 'max:30'],

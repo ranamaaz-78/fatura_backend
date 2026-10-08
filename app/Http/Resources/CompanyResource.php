@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\Text;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -11,18 +12,19 @@ class CompanyResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'name' => $this->name,
+            'name' => Text::proper($this->name),
             'slug' => $this->slug,
             'email' => $this->email,
             'tax_id' => $this->tax_id,
             'phone' => $this->phone,
             'whatsapp' => $this->whatsapp,
-            'address' => $this->address,
-            'city' => $this->city,
+            'address' => Text::proper($this->address),
+            'city' => Text::proper($this->city),
             'postal_code' => $this->postal_code,
             'country' => $this->country,
             'currency' => $this->currency,
             'locale' => $this->locale,
+            'document_locale' => $this->document_locale,
             'logo_url' => $this->logo_path ? '/app/company/logo' : null,
             'profile_complete' => $this->isProfileComplete(),
             'missing_fields' => $this->missingProfileFields(),

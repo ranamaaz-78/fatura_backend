@@ -10,6 +10,7 @@ class SalesDocumentLineResource extends JsonResource
     public function toArray(Request $request): array
     {
         $settled = $this->relationLoaded('settlementLines') ? $this->settledQuantity() : 0;
+        $returned = $this->relationLoaded('returnLines') ? $this->returnedQuantity() : 0;
 
         return [
             'id' => $this->id,
@@ -28,7 +29,8 @@ class SalesDocumentLineResource extends JsonResource
             // base_cents and tax_cents are already net of this share of the bill discount.
             'bill_discount_cents' => (int) $this->bill_discount_cents,
             'settled_quantity' => $settled,
-            'remaining_quantity' => max(0, (int) $this->quantity - $settled),
+            'returned_quantity' => $returned,
+            'remaining_quantity' => max(0, (int) $this->quantity - $settled - $returned),
         ];
     }
 }

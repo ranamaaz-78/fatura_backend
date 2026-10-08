@@ -14,8 +14,9 @@ class ProductImageResource extends JsonResource
             'name' => $this->name,
             'mime' => $this->mime,
             'size_bytes' => $this->size_bytes,
-            // The authenticated stream. The disk path stays on the server.
-            'file_url' => "/app/product-images/{$this->uuid}/file",
+            // The authenticated stream. The disk path stays on the server. The version changes when the
+            // file is replaced, so neither the browser nor the page keeps showing the old picture.
+            'file_url' => "/app/product-images/{$this->uuid}/file?v=".($this->updated_at?->timestamp ?? 0),
             'created_at' => $this->created_at?->toIso8601String(),
         ];
     }

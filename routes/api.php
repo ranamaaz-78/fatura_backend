@@ -64,8 +64,6 @@ Route::middleware(['auth:sanctum', 'role:super_admin'])->prefix('admin')->group(
     Route::patch('/companies/{company}/status', [Admin\CompanyController::class, 'updateStatus']);
     Route::post('/companies/{company}/subscriptions', [Admin\CompanyController::class, 'subscriptions']);
     Route::post('/companies/{company}/resend-access', [Admin\CompanyController::class, 'resendAccess']);
-    Route::get('/companies/{company}/whatsapp', [Admin\WhatsAppController::class, 'show']);
-    Route::post('/companies/{company}/whatsapp/disconnect', [Admin\WhatsAppController::class, 'disconnect']);
     Route::post('/subscriptions/{subscription}/cancel', [Admin\CompanyController::class, 'cancelSubscription']);
 });
 
@@ -120,12 +118,16 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::post('/sales/{sale}/convert', [Tenant\SaleController::class, 'convert']);
         Route::patch('/sales/{sale}/payment', [Tenant\SaleController::class, 'updatePayment']);
         Route::post('/sales/{sale}/settle', [Tenant\SaleController::class, 'settle']);
+        Route::post('/sales/{sale}/settlements/{settlement}/invoice', [Tenant\SaleController::class, 'invoiceSettlement']);
+        Route::post('/sales/{sale}/returns', [Tenant\SaleController::class, 'returnPieces']);
+        Route::delete('/sales/{sale}/returns/{return}', [Tenant\SaleController::class, 'cancelReturn']);
         Route::patch('/sales/{sale}/settlements/{settlement}', [Tenant\SaleController::class, 'updateSettlement']);
         Route::post('/sales/{sale}/void', [Tenant\SaleController::class, 'void']);
 
         Route::get('/product-images', [Tenant\ProductImageController::class, 'index']);
         Route::post('/product-images', [Tenant\ProductImageController::class, 'store']);
         Route::get('/product-images/{productImage}/file', [Tenant\ProductImageController::class, 'file']);
+        Route::post('/product-images/{productImage}/replace', [Tenant\ProductImageController::class, 'replace']);
         Route::patch('/product-images/{productImage}', [Tenant\ProductImageController::class, 'update']);
         Route::delete('/product-images/{productImage}', [Tenant\ProductImageController::class, 'destroy']);
 
@@ -146,6 +148,7 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
             ->whereIn('type', ['factura', 'albaran', 'quotation', 'proforma']);
 
         Route::patch('/company/locale', [Tenant\CompanySettingsController::class, 'updateLocale']);
+        Route::patch('/company/document-locale', [Tenant\CompanySettingsController::class, 'updateDocumentLocale']);
         Route::get('/company', [Tenant\CompanySettingsController::class, 'show']);
         Route::patch('/company', [Tenant\CompanySettingsController::class, 'update']);
         Route::patch('/password', [Tenant\PasswordController::class, 'update']);
@@ -154,12 +157,8 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::post('/company/logo', [Tenant\CompanyLogoController::class, 'store']);
         Route::delete('/company/logo', [Tenant\CompanyLogoController::class, 'destroy']);
 
-        Route::get('/whatsapp/status', [Tenant\WhatsAppController::class, 'status']);
-        Route::post('/whatsapp/init', [Tenant\WhatsAppController::class, 'init']);
-        Route::post('/whatsapp/logout', [Tenant\WhatsAppController::class, 'logout']);
+        Route::get('/whatsapp/settings', [Tenant\WhatsAppController::class, 'settings']);
         Route::patch('/whatsapp/settings', [Tenant\WhatsAppController::class, 'updateSettings']);
-        Route::post('/whatsapp/send-document', [Tenant\WhatsAppController::class, 'sendDocument']);
-        Route::post('/whatsapp/test', [Tenant\WhatsAppController::class, 'testMessage']);
     });
 });
 

@@ -26,7 +26,7 @@ class PlanSeeder extends Seeder
                     'Soporte por email',
                 ],
                 'price' => 20.00,
-                'currency' => 'USD',
+                'currency' => 'EUR',
                 'interval' => PlanInterval::Month,
                 'features' => [
                     'Unlimited invoices',

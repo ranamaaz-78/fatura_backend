@@ -5,19 +5,12 @@ return [
     'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
 
     'support' => [
-        'email' => env('SUPPORT_EMAIL', 'support@fatura.test'),
-        'whatsapp' => env('SUPPORT_WHATSAPP', '+10000000000'),
+        'email' => env('SUPPORT_EMAIL', 'info@ykdigitalsolutions.com'),
+        'whatsapp' => env('SUPPORT_WHATSAPP', '+34678708084'),
     ],
 
     'whatsapp' => [
         'driver' => env('WHATSAPP_DRIVER', 'link'),
-    ],
-
-    'whatsapp_service' => [
-        'url' => env('WHATSAPP_SERVICE_URL', 'http://127.0.0.1:3333'),
-        'path' => env('WHATSAPP_SERVICE_PATH', base_path('../whatsapp_service')),
-        'auto_start' => (bool) env('WHATSAPP_SERVICE_AUTO_START', true),
-        'secret' => env('WHATSAPP_SERVICE_SECRET'),
     ],
 
     'subscriptions' => [

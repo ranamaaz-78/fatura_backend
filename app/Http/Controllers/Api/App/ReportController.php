@@ -471,6 +471,7 @@ class ReportController extends Controller
     {
         return SalesDocument::query()
             ->whereIn('sales_documents.type', self::SALE_TYPES)
+            ->whereNull('sales_documents.from_settlement_id')
             ->whereNull('sales_documents.voided_at')
             ->when($range !== null, fn (Builder $query) => $query->whereBetween('sales_documents.issued_at', $range));
     }
@@ -499,12 +500,12 @@ class ReportController extends Controller
 
     private function outstandingExpr(): string
     {
-        return 'CASE WHEN sales_documents.payment_status = \'paid\' THEN 0 WHEN sales_documents.total_cents > COALESCE(settled.settled_cents, 0) THEN sales_documents.total_cents - COALESCE(settled.settled_cents, 0) ELSE 0 END';
+        return 'CASE WHEN sales_documents.payment_status = \'paid\' THEN 0 WHEN sales_documents.total_cents - sales_documents.returned_cents > COALESCE(settled.settled_cents, 0) THEN sales_documents.total_cents - sales_documents.returned_cents - COALESCE(settled.settled_cents, 0) ELSE 0 END';
     }
 
     private function paidSumSql(): string
     {
-        return 'COALESCE(SUM(CASE WHEN sales_documents.payment_status = \'paid\' THEN sales_documents.total_cents ELSE COALESCE(settled.settled_cents, 0) END), 0)';
+        return 'COALESCE(SUM(CASE WHEN sales_documents.payment_status = \'paid\' THEN sales_documents.total_cents - sales_documents.returned_cents ELSE COALESCE(settled.settled_cents, 0) END), 0)';
     }
 
     private function outstandingSumSql(): string

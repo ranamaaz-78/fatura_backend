@@ -64,9 +64,9 @@ class ClientAddressTest extends TestCase
 
         $this->issue('factura', ['customer_id' => $customer->id, 'client_address' => 'New street 9'])
             ->assertCreated()
-            ->assertJsonPath('data.client_address', 'New street 9');
+            ->assertJsonPath('data.client_address', 'New Street 9');
 
-        $this->assertSame('New street 9', $customer->fresh()->address);
+        $this->assertSame('New Street 9', $customer->fresh()->address);
     }
 
     public function test_a_quotation_hands_its_address_to_the_invoice_made_from_it(): void

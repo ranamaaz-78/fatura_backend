@@ -54,7 +54,7 @@ class DashboardController extends Controller
                     ->count(),
             ],
             'revenue' => [
-                'currency' => 'USD',
+                'currency' => 'EUR',
                 'this_month' => (float) Payment::withoutGlobalScopes()
                     ->where('status', PaymentStatus::Paid)
                     ->where('paid_at', '>=', now()->startOfMonth())

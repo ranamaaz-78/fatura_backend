@@ -15,6 +15,7 @@ class SalesDocumentSettlement extends Model
         'company_id',
         'sales_document_id',
         'payment_method_id',
+        'invoice_id',
         'created_by',
         'total_cents',
     ];
@@ -27,6 +28,11 @@ class SalesDocumentSettlement extends Model
     public function paymentMethod(): BelongsTo
     {
         return $this->belongsTo(CompanyPaymentMethod::class, 'payment_method_id');
+    }
+
+    public function invoice(): BelongsTo
+    {
+        return $this->belongsTo(SalesDocument::class, 'invoice_id');
     }
 
     public function author(): BelongsTo

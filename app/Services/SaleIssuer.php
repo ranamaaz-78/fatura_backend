@@ -22,7 +22,7 @@ class SaleIssuer
     {
         return DB::transaction(function () use ($user, $input) {
             $companyId = (int) $user->company_id;
-            $lines = $this->pricedLines($companyId, $input['lines'], $input['type']);
+            $lines = $this->pricedLines($companyId, $input['lines'], $input['type'], moveStock: empty($input['from_settlement_id']));
             [$lines, $discount] = $this->applyBillDiscount($lines, $input, $input['type']);
             $customer = $this->resolveCustomer($companyId, $input);
 
@@ -38,6 +38,7 @@ class SaleIssuer
                 'type' => $input['type'],
                 'number' => $this->numbers->take($companyId, $input['type'], (int) $issuedAt->year),
                 'issued_at' => $issuedAt,
+                'from_settlement_id' => $input['from_settlement_id'] ?? null,
                 'expires_at' => $input['type'] === 'quotation' ? SalesDocument::expiryFor($issuedAt) : null,
                 'payment_status' => $input['payment_status'],
                 'payment_method_id' => $this->resolvePaymentMethod($companyId, $input),
@@ -188,7 +189,7 @@ class SaleIssuer
      * @param  array<int, array<string, mixed>>  $rows
      * @return array<int, array<string, mixed>>
      */
-    private function pricedLines(int $companyId, array $rows, string $type): array
+    private function pricedLines(int $companyId, array $rows, string $type, bool $moveStock = true): array
     {
         $needed = [];
         foreach ($rows as $row) {
@@ -197,7 +198,8 @@ class SaleIssuer
             }
         }
 
-        $direction = SalesDocument::stockDirectionFor($type);
+        // An invoice made from a proforma payment moves no stock: the proforma took it out already.
+        $direction = $moveStock ? SalesDocument::stockDirectionFor($type) : 0;
 
         $products = $needed === []
             ? collect()
@@ -431,6 +433,11 @@ class SaleIssuer
     {
         if (($input['payment_status'] ?? '') !== 'paid' || ! SalesDocument::settlesPayment($input['type'])) {
             return null;
+        }
+
+        // Paid at the time of the proforma payment: keep that method even if it has since been switched off.
+        if (! empty($input['from_settlement_id'])) {
+            return (int) $input['payment_method_id'];
         }
 
         return CompanyPaymentMethod::requireActive($companyId, $input['payment_method_id'] ?? null);

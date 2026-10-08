@@ -49,9 +49,24 @@ class SalesDocumentLine extends Model
         return (int) $this->settlementLines()->sum('quantity');
     }
 
+    public function returnLines(): HasMany
+    {
+        return $this->hasMany(SalesDocumentReturnLine::class);
+    }
+
+    public function returnedQuantity(): int
+    {
+        if ($this->relationLoaded('returnLines')) {
+            return (int) $this->returnLines->sum('quantity');
+        }
+
+        return (int) $this->returnLines()->sum('quantity');
+    }
+
+    /** Pieces that are neither paid for nor sent back yet. */
     public function remainingQuantity(): int
     {
-        return max(0, (int) $this->quantity - $this->settledQuantity());
+        return max(0, (int) $this->quantity - $this->settledQuantity() - $this->returnedQuantity());
     }
 
     protected function casts(): array

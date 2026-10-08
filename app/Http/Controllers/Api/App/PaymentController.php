@@ -129,7 +129,10 @@ class PaymentController extends Controller
     {
         return SalesDocument::query()
             ->whereIn('type', ['factura', 'albaran', 'proforma'])
+            ->whereNull('from_settlement_id')
             ->whereNull('voided_at')
+            // A proforma that came back whole was never a sale, so it has no place among the payments.
+            ->whereRaw('(returned_cents = 0 OR returned_cents < total_cents)')
             ->with(['paymentMethod', 'settlements.paymentMethod'])
             ->withSum('settlements as settled_cents', 'total_cents')
             ->get()
@@ -172,7 +175,8 @@ class PaymentController extends Controller
     private function fromDocument(SalesDocument $document): array
     {
         $settled = (int) $document->settledCents();
-        $total = (int) $document->total_cents;
+        // Pieces that came back are neither owed nor paid.
+        $total = max(0, (int) $document->total_cents - (int) $document->returned_cents);
         $status = match ($document->payment_status) {
             'paid' => 'received',
             'partial' => 'partial',

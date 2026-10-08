@@ -54,6 +54,40 @@ class ProductImageFolderTest extends TestCase
             ->assertJsonPath('data.1.name', 'older');
     }
 
+    public function test_a_duplicate_name_is_reported_and_can_be_replaced_in_place(): void
+    {
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/product-images', ['files' => [UploadedFile::fake()->image('dev.jpg', 40, 40)]])
+            ->assertCreated();
+
+        $image = ProductImage::first();
+        $oldPath = $image->path;
+        $oldUrl = "/app/product-images/{$image->uuid}/file?v=".$image->updated_at->timestamp;
+
+        // Same name again: nothing is saved, and the answer names the picture it would replace.
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/product-images', ['files' => [UploadedFile::fake()->image('Dev.png', 50, 50)]])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.files.0.duplicate_of', $image->uuid);
+
+        $this->assertSame(1, ProductImage::count());
+
+        $this->travel(5)->seconds();
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson("/api/app/product-images/{$image->uuid}/replace", ['file' => UploadedFile::fake()->image('dev.png', 50, 50)])
+            ->assertOk()
+            ->assertJsonPath('data.name', 'dev')
+            ->assertJsonPath('data.mime', 'image/png');
+
+        $image->refresh();
+
+        $this->assertNotSame($oldPath, $image->path);
+        Storage::disk('local')->assertMissing($oldPath);
+        Storage::disk('local')->assertExists($image->path);
+        $this->assertNotSame($oldUrl, "/app/product-images/{$image->uuid}/file?v=".$image->updated_at->timestamp);
+    }
+
     public function test_uploading_drops_the_extension_and_stores_a_generated_path(): void
     {
         $response = $this->actingAs($this->owner, 'sanctum')

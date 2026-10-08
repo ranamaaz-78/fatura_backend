@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use App\Support\Text;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -52,7 +54,25 @@ class SalesDocument extends Model
         'recargo_percent',
         'recargo_cents',
         'total_cents',
+        'returned_cents',
+        'from_settlement_id',
     ];
+
+    // Names and places print in Proper Case ("taller de marta s.l." becomes "Taller de Marta S.L."), as on the company.
+    protected function clientName(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => Text::proper($value));
+    }
+
+    protected function clientCompany(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => Text::proper($value));
+    }
+
+    protected function clientAddress(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => Text::proper($value));
+    }
 
     public function customer(): BelongsTo
     {
@@ -72,6 +92,23 @@ class SalesDocument extends Model
     public function lines(): HasMany
     {
         return $this->hasMany(SalesDocumentLine::class)->orderBy('position');
+    }
+
+    /** The proforma payment this invoice was made from, if any. */
+    public function fromSettlement(): BelongsTo
+    {
+        return $this->belongsTo(SalesDocumentSettlement::class, 'from_settlement_id');
+    }
+
+    /** An invoice made from a proforma payment is paper only: it moves no stock and adds no sale. */
+    public function isDerived(): bool
+    {
+        return $this->from_settlement_id !== null;
+    }
+
+    public function returns(): HasMany
+    {
+        return $this->hasMany(SalesDocumentReturn::class)->orderBy('id');
     }
 
     public function settlements(): HasMany
@@ -155,6 +192,21 @@ class SalesDocument extends Model
         return self::settlesLines($this->type) && $this->payment_status !== 'paid';
     }
 
+    /** Pieces of a proforma can come back while some are still unpaid and not yet returned. */
+    public function canReturn(): bool
+    {
+        return self::settlesLines($this->type) && $this->payment_status !== 'paid' && ! $this->isVoided();
+    }
+
+    /** Every piece came back and nothing was paid: the proforma ended without a sale. */
+    public function isFullyReturned(): bool
+    {
+        return $this->type === 'proforma'
+            && (int) $this->returned_cents > 0
+            && (int) $this->returned_cents >= (int) $this->total_cents
+            && $this->settledCents() === 0;
+    }
+
     public function stockDirection(): int
     {
         return self::stockDirectionFor($this->type);
@@ -227,6 +279,7 @@ class SalesDocument extends Model
             'recargo_percent' => 'float',
             'recargo_cents' => 'integer',
             'total_cents' => 'integer',
+            'returned_cents' => 'integer',
         ];
     }
 }

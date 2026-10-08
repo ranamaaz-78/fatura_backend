@@ -47,7 +47,8 @@ class SaleVoider
     private function restock(SalesDocument $document): void
     {
         $direction = $document->stockDirection();
-        if ($direction === 0) {
+        // An invoice made from a proforma payment never took stock out.
+        if ($direction === 0 || $document->isDerived()) {
             return;
         }
 

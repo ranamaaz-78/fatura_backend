@@ -6,11 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\SalesDocumentResource;
 use App\Models\CompanyPaymentMethod;
 use App\Models\SalesDocument;
+use App\Models\SalesDocumentReturn;
 use App\Models\SalesDocumentSettlement;
 use App\Services\DocumentNumber;
 use App\Services\SaleIssuer;
+use App\Services\SaleReturner;
 use App\Services\SaleSettler;
 use App\Services\SaleVoider;
+use App\Services\SettlementInvoicer;
 use App\Traits\ApiResponse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -25,6 +28,8 @@ class SaleController extends Controller
         private readonly SaleIssuer $issuer,
         private readonly SaleVoider $voider,
         private readonly SaleSettler $settler,
+        private readonly SaleReturner $returner,
+        private readonly SettlementInvoicer $invoicer,
         private readonly DocumentNumber $numbers,
     ) {}
 
@@ -110,7 +115,7 @@ class SaleController extends Controller
 
     public function show(SalesDocument $sale): JsonResponse
     {
-        $sale->load(SaleSettler::relations());
+        $sale->load([...SaleSettler::relations(), 'fromSettlement.document']);
 
         return $this->success(new SalesDocumentResource($sale));
     }
@@ -204,6 +209,54 @@ class SaleController extends Controller
             $document->payment_status === 'paid'
                 ? __('Proforma settled.')
                 : __('Partial payment recorded.'),
+        );
+    }
+
+    /** The invoice for one payment on a proforma: its pieces and prices, with IVA added, and no stock moved. */
+    public function invoiceSettlement(Request $request, SalesDocument $sale, SalesDocumentSettlement $settlement): JsonResponse
+    {
+        $data = $request->validate([
+            'iva' => ['nullable', 'array'],
+            'iva.*' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            // A rate from Settings: recargo de equivalencia is added to the invoice.
+            'recargo_rate_id' => ['nullable', 'integer'],
+        ]);
+
+        $invoice = $this->invoicer->invoice($request->user(), $sale, $settlement, $data['iva'] ?? [], $data['recargo_rate_id'] ?? null);
+
+        return $this->success(
+            new SalesDocumentResource($invoice),
+            __(':number issued.', ['number' => $invoice->number]),
+            201,
+        );
+    }
+
+    /** Pieces of a proforma that came back: they go back into stock and stop counting as owed. */
+    public function returnPieces(Request $request, SalesDocument $sale): JsonResponse
+    {
+        $data = $request->validate([
+            'lines' => ['required', 'array', 'min:1', 'max:100'],
+            'lines.*.line_id' => ['required', 'integer'],
+            'lines.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $document = $this->returner->record($request->user(), $sale, $data);
+
+        return $this->success(
+            new SalesDocumentResource($document),
+            __('Return recorded. The pieces are back in stock.'),
+            201,
+        );
+    }
+
+    public function cancelReturn(SalesDocument $sale, SalesDocumentReturn $return): JsonResponse
+    {
+        $document = $this->returner->cancel($sale, $return);
+
+        return $this->success(
+            new SalesDocumentResource($document),
+            __('Return cancelled. The pieces are out of stock again.'),
         );
     }
 

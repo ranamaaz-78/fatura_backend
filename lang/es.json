@@ -229,7 +229,6 @@
     "Too many login attempts. Try again in :seconds seconds.": "Demasiados intentos de inicio de sesión. Inténtalo de nuevo en :seconds segundos.",
     "Too many wrong attempts. Request a new code.": "Demasiados intentos fallidos. Pide un código nuevo.",
     "Unauthenticated.": "No has iniciado sesión.",
-    "Upload your company logo.": "Sube el logotipo de tu empresa.",
     "Use the button below to choose a password for your account.": "Usa el botón de abajo para elegir una contraseña para tu cuenta.",
     "Use this link to choose a new password. It is valid for :minutes minutes.": "Usa este enlace para elegir una nueva contraseña. Es válido durante :minutes minutos.",
     "Valid for :minutes minutes · single use": "Válido durante :minutes minutos · un solo uso",
@@ -266,5 +265,15 @@
     "Your verification code is :code. It is valid for :minutes minutes.": "Tu código de verificación es :code. Es válido durante :minutes minutos.",
     "Your WhatsApp is not connected. Connect it in Settings, under WhatsApp, first.": "Tu WhatsApp no está conectado. Conéctalo antes en Ajustes, en WhatsApp.",
     "{1} :count image uploaded.|[2,*] :count images uploaded.": "{1} :count imagen subida.|[2,*] :count imágenes subidas.",
-    "{1} :count product imported.|[2,*] :count products imported.": "{1} :count producto importado.|[2,*] :count productos importados."
+    "{1} :count product imported.|[2,*] :count products imported.": "{1} :count producto importado.|[2,*] :count productos importados.",
+    "The original price must be higher than the price.": "El precio original debe ser mayor que el precio.",
+    "Only a proforma can have pieces returned.": "Solo se pueden devolver piezas de una proforma.",
+    "Return each line once.": "Devuelve cada línea una sola vez.",
+    "Pick at least one line to return.": "Elige al menos una línea para devolver.",
+    "That return is not on this proforma.": "Esa devolución no pertenece a esta proforma.",
+    "Return recorded. The pieces are back in stock.": "Devolución registrada. Las piezas han vuelto a las existencias.",
+    "Return cancelled. The pieces are out of stock again.": "Devolución cancelada. Las piezas han salido de nuevo de las existencias.",
+    "Only a proforma payment can be invoiced.": "Solo se puede facturar un pago de una proforma.",
+    "This payment already has invoice :number.": "Este pago ya tiene la factura :number.",
+    "This payment already has invoice :number, so it can no longer be changed.": "Este pago ya tiene la factura :number, por lo que ya no se puede modificar."
 }

@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use App\Support\Text;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -26,6 +28,22 @@ class Customer extends Model
         'address',
         'is_active',
     ];
+
+    // Names and places are stored in Proper Case, however they were typed.
+    protected function name(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => Text::proper($value));
+    }
+
+    protected function companyName(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => Text::proper($value));
+    }
+
+    protected function address(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => Text::proper($value));
+    }
 
     public function documents(): HasMany
     {

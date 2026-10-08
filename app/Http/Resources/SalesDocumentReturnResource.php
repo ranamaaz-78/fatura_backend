@@ -5,26 +5,14 @@ namespace App\Http\Resources;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class SalesDocumentSettlementResource extends JsonResource
+class SalesDocumentReturnResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
         return [
             'id' => $this->id,
-            'payment_method_id' => $this->payment_method_id,
-            'payment_method' => $this->whenLoaded(
-                'paymentMethod',
-                fn () => $this->paymentMethod === null
-                    ? null
-                    : ['id' => $this->paymentMethod->id, 'name' => $this->paymentMethod->name],
-            ),
+            'note' => $this->note,
             'total_cents' => $this->total_cents,
-            'invoice' => $this->whenLoaded(
-                'invoice',
-                fn () => $this->invoice === null
-                    ? null
-                    : ['id' => $this->invoice->id, 'number' => $this->invoice->number, 'is_voided' => $this->invoice->isVoided()],
-            ),
             'created_at' => $this->created_at?->toIso8601String(),
             'lines' => $this->whenLoaded(
                 'lines',

@@ -51,6 +51,23 @@ class CompanySettingsController extends Controller
         return $this->success(new CompanyResource($locales->change($company, $data['locale'])), __('Language saved.'));
     }
 
+    /** The language printed on documents, independent of the panel's. Null follows the panel. Only the owner chooses it. */
+    public function updateDocumentLocale(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->role === UserRole::BusinessAdmin, 403);
+
+        $company = $request->user()->company;
+        abort_unless($company, 404);
+
+        $data = $request->validate([
+            'document_locale' => ['nullable', 'string', Rule::in(Locales::SUPPORTED)],
+        ]);
+
+        $company->update(['document_locale' => $data['document_locale'] ?? null]);
+
+        return $this->success(new CompanyResource($company->fresh()), __('Language saved.'));
+    }
+
     /**
      * Every detail is compulsory: they print on every document, and the workspace stays closed until they are in.
      *
@@ -79,15 +96,6 @@ class CompanySettingsController extends Controller
             'postal_code.regex' => __('Enter a valid postal code.'),
         ]);
 
-        // The logo is uploaded on its own; the details cannot be saved without one.
-        $validator->after(function ($validator) use ($company) {
-            if (blank($company->logo_path)) {
-                $validator->errors()->add('logo', __('Upload your company logo.'));
-            }
-        });
-
-        $data = $validator->validate();
-
-        return $data;
+        return $validator->validate();
     }
 }

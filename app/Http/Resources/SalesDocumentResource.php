@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\Text;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -42,12 +43,12 @@ class SalesDocumentResource extends JsonResource
             ),
             'customer_id' => $this->customer_id,
             'client_code' => $this->client_code,
-            'client_name' => $this->client_name,
-            'client_company' => $this->client_company,
+            'client_name' => Text::proper($this->client_name),
+            'client_company' => Text::proper($this->client_company),
             'client_phone' => $this->client_phone,
             'client_nif' => $this->client_nif,
             'client_nie' => $this->client_nie,
-            'client_address' => $this->client_address,
+            'client_address' => Text::proper($this->client_address),
             'notes' => $this->notes,
             'base_cents' => $this->base_cents,
             'tax_cents' => $this->tax_cents,
@@ -59,9 +60,19 @@ class SalesDocumentResource extends JsonResource
             'recargo_cents' => (int) $this->recargo_cents,
             'total_cents' => $this->total_cents,
             'settled_cents' => $this->settledCents(),
+            'returned_cents' => (int) $this->returned_cents,
+            'from_settlement_id' => $this->from_settlement_id,
+            'from_proforma' => $this->whenLoaded(
+                'fromSettlement',
+                fn () => $this->fromSettlement?->document === null
+                    ? null
+                    : ['id' => $this->fromSettlement->document->id, 'number' => $this->fromSettlement->document->number],
+            ),
+            'is_fully_returned' => $this->isFullyReturned(),
             'is_partial' => $this->payment_status === 'partial',
             'lines' => SalesDocumentLineResource::collection($this->whenLoaded('lines')),
             'settlements' => SalesDocumentSettlementResource::collection($this->whenLoaded('settlements')),
+            'returns' => SalesDocumentReturnResource::collection($this->whenLoaded('returns')),
         ];
     }
 }

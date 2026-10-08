@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * A company has to finish its setup (every detail, and the logo) before the workspace opens.
+ * A company has to finish its setup (every detail; the logo is optional) before the workspace opens.
  * Only the screens that carry out the setup stay reachable meanwhile.
  */
 class EnsureCompanySetup

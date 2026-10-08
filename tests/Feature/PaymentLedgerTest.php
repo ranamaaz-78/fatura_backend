@@ -45,7 +45,7 @@ class PaymentLedgerTest extends TestCase
             ->assertJsonPath('data.items.0.status', 'partial')
             ->assertJsonPath('data.items.0.payment_method.name', 'Cash')
             ->assertJsonPath('data.items.0.outstanding_cents', 2200)
-            ->assertJsonPath('data.items.1.client_name', 'Walk-in')
+            ->assertJsonPath('data.items.1.client_name', 'Walk-In')
             ->assertJsonPath('data.items.1.status', 'pending')
             ->assertJsonPath('data.items.2.client_name', 'Adeel')
             ->assertJsonPath('data.items.2.status', 'received')
@@ -88,7 +88,7 @@ class PaymentLedgerTest extends TestCase
             ->getJson("/api/app/payments?period=custom&from={$from}&to={$to}")
             ->assertOk()
             ->assertJsonCount(1, 'data.items')
-            ->assertJsonPath('data.items.0.client_name', 'Last month');
+            ->assertJsonPath('data.items.0.client_name', 'Last Month');
     }
 
     public function test_status_and_method_filters_apply_together(): void
@@ -108,14 +108,14 @@ class PaymentLedgerTest extends TestCase
             ->getJson('/api/app/payments?status=pending')
             ->assertOk()
             ->assertJsonCount(1, 'data.items')
-            ->assertJsonPath('data.items.0.client_name', 'Walk-in')
+            ->assertJsonPath('data.items.0.client_name', 'Walk-In')
             ->assertJsonPath('data.items.0.status', 'pending');
 
         $this->actingAs($this->owner, 'sanctum')
             ->getJson('/api/app/payments?payment_method_id=none&status=pending')
             ->assertOk()
             ->assertJsonCount(1, 'data.items')
-            ->assertJsonPath('data.items.0.client_name', 'Walk-in');
+            ->assertJsonPath('data.items.0.client_name', 'Walk-In');
     }
 
     public function test_another_company_cannot_see_these_payments(): void

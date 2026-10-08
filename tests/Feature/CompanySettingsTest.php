@@ -86,16 +86,16 @@ class CompanySettingsTest extends TestCase
             ->assertJsonMissingValidationErrors(['name', 'email', 'currency']);
     }
 
-    public function test_the_details_cannot_be_saved_without_a_logo(): void
+    public function test_the_details_can_be_saved_without_a_logo(): void
     {
         $this->company->forceFill(['logo_path' => null])->save();
 
         $this->actingAs($this->owner, 'sanctum')
             ->patchJson('/api/app/company', $this->details())
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('logo');
+            ->assertOk()
+            ->assertJsonPath('data.profile_complete', true);
 
-        $this->assertSame('Old Co', $this->company->fresh()->name);
+        $this->assertNotSame('Old Co', $this->company->fresh()->name);
     }
 
     public function test_names_and_places_are_saved_in_proper_case(): void
@@ -152,7 +152,7 @@ class CompanySettingsTest extends TestCase
             ->getJson('/api/app/company')
             ->assertOk()
             ->assertJsonPath('data.profile_complete', false)
-            ->assertJsonPath('data.missing_fields', ['tax_id', 'address', 'postal_code', 'logo']);
+            ->assertJsonPath('data.missing_fields', ['tax_id', 'address', 'postal_code']);
     }
 
     public function test_an_unknown_currency_is_rejected(): void

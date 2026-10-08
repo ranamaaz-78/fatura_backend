@@ -32,7 +32,7 @@ class CompanySetupGateTest extends TestCase
                 ->getJson($path)
                 ->assertStatus(403)
                 ->assertJsonPath('code', 'COMPANY_SETUP_REQUIRED')
-                ->assertJsonPath('data.missing_fields', ['tax_id', 'address', 'postal_code', 'logo']);
+                ->assertJsonPath('data.missing_fields', ['tax_id', 'address', 'postal_code']);
         }
     }
 
@@ -53,8 +53,7 @@ class CompanySetupGateTest extends TestCase
 
         $this->actingAs($owner, 'sanctum')->getJson('/api/app/dashboard')->assertStatus(403);
 
-        // The logo goes up first, then the details.
-        $company->forceFill(['logo_path' => 'company-logos/1/logo.png'])->save();
+        // No logo is uploaded: it is optional.
         $owner->refresh();
 
         $this->actingAs($owner, 'sanctum')

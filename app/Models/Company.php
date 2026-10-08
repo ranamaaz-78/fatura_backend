@@ -36,6 +36,7 @@ class Company extends Model
         'country',
         'currency',
         'locale',
+        'document_locale',
         'logo_path',
         'status',
         'notes',
@@ -48,22 +49,16 @@ class Company extends Model
         ];
     }
 
-    /** What a business must give before it can issue documents; the logo is checked as well. */
+    /** What a business must give before it can issue documents. The logo is optional: documents show the initials without one. */
     public const PROFILE_FIELDS = ['name', 'email', 'tax_id', 'phone', 'whatsapp', 'address', 'city', 'postal_code', 'country', 'currency'];
 
-    /** @return list<string> the profile fields still empty, with "logo" when none is uploaded */
+    /** @return list<string> the profile fields still empty */
     public function missingProfileFields(): array
     {
-        $missing = array_values(array_filter(
+        return array_values(array_filter(
             self::PROFILE_FIELDS,
             fn (string $field) => blank($this->getAttribute($field)),
         ));
-
-        if (blank($this->logo_path)) {
-            $missing[] = 'logo';
-        }
-
-        return $missing;
     }
 
     public function isProfileComplete(): bool

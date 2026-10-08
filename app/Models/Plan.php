@@ -19,6 +19,7 @@ class Plan extends Model
         'description',
         'description_es',
         'price',
+        'original_price',
         'currency',
         'interval',
         'features',
@@ -34,6 +35,7 @@ class Plan extends Model
     {
         return [
             'price' => 'decimal:2',
+            'original_price' => 'decimal:2',
             'interval' => PlanInterval::class,
             'features' => 'array',
             'features_es' => 'array',

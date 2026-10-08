@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CompanyPaymentMethod;
 use App\Models\SalesDocument;
 use App\Models\SalesDocumentLine;
+use App\Models\SalesDocumentReturnLine;
 use App\Models\SalesDocumentSettlement;
 use App\Models\SalesDocumentSettlementLine;
 use App\Models\User;
@@ -48,6 +49,12 @@ class SaleSettler
                 ->selectRaw('sales_document_line_id, SUM(quantity) as qty')
                 ->groupBy('sales_document_line_id')
                 ->pluck('qty', 'sales_document_line_id');
+            // Pieces that came back are neither paid nor owed.
+            $returnedQty = SalesDocumentReturnLine::query()
+                ->whereIn('sales_document_line_id', $lines->keys())
+                ->selectRaw('sales_document_line_id, SUM(quantity) as qty')
+                ->groupBy('sales_document_line_id')
+                ->pluck('qty', 'sales_document_line_id');
 
             $rows = $input['lines'] ?? [];
             $seen = [];
@@ -74,7 +81,7 @@ class SaleSettler
                     ]);
                 }
 
-                $remaining = (int) $line->quantity - (int) ($settledQty[$lineId] ?? 0);
+                $remaining = (int) $line->quantity - (int) ($settledQty[$lineId] ?? 0) - (int) ($returnedQty[$lineId] ?? 0);
                 if ($quantity < 1 || $quantity > $remaining) {
                     throw ValidationException::withMessages([
                         "lines.{$index}.quantity" => __('Pick between 1 and :remaining pieces.', [
@@ -115,8 +122,8 @@ class SaleSettler
             ]);
             $settlement->lines()->createMany($settlementLines);
 
-            $fullySettled = $lines->every(function (SalesDocumentLine $line) use ($settledQty, $addedQty) {
-                $done = (int) ($settledQty[$line->id] ?? 0) + (int) ($addedQty[$line->id] ?? 0);
+            $fullySettled = $lines->every(function (SalesDocumentLine $line) use ($settledQty, $returnedQty, $addedQty) {
+                $done = (int) ($settledQty[$line->id] ?? 0) + (int) ($returnedQty[$line->id] ?? 0) + (int) ($addedQty[$line->id] ?? 0);
 
                 return $done >= (int) $line->quantity;
             });
@@ -156,6 +163,13 @@ class SaleSettler
                 ]);
             }
 
+            $invoice = $locked->invoice;
+            if ($invoice !== null && ! $invoice->isVoided()) {
+                throw ValidationException::withMessages([
+                    'settlement' => __('This payment already has invoice :number, so it can no longer be changed.', ['number' => $invoice->number]),
+                ]);
+            }
+
             $lines = SalesDocumentLine::query()
                 ->where('sales_document_id', $document->id)
                 ->lockForUpdate()
@@ -167,6 +181,12 @@ class SaleSettler
             $otherQty = SalesDocumentSettlementLine::query()
                 ->whereIn('sales_document_line_id', $lines->keys())
                 ->where('sales_document_settlement_id', '!=', $locked->id)
+                ->selectRaw('sales_document_line_id, SUM(quantity) as qty')
+                ->groupBy('sales_document_line_id')
+                ->pluck('qty', 'sales_document_line_id');
+
+            $returnedQty = SalesDocumentReturnLine::query()
+                ->whereIn('sales_document_line_id', $lines->keys())
                 ->selectRaw('sales_document_line_id, SUM(quantity) as qty')
                 ->groupBy('sales_document_line_id')
                 ->pluck('qty', 'sales_document_line_id');
@@ -201,7 +221,7 @@ class SaleSettler
                     ]);
                 }
 
-                $max = (int) $documentLine->quantity - (int) ($otherQty[$lineId] ?? 0);
+                $max = (int) $documentLine->quantity - (int) ($otherQty[$lineId] ?? 0) - (int) ($returnedQty[$lineId] ?? 0);
                 if ($quantity < 1 || $quantity > $max) {
                     throw ValidationException::withMessages([
                         "lines.{$index}.quantity" => __('Pick between 1 and :remaining pieces.', [
@@ -229,8 +249,8 @@ class SaleSettler
 
             $locked->update(['total_cents' => $totalCents]);
 
-            $fullySettled = $lines->every(function (SalesDocumentLine $line) use ($otherQty, $nextQty) {
-                $done = (int) ($otherQty[$line->id] ?? 0) + (int) ($nextQty[$line->id] ?? 0);
+            $fullySettled = $lines->every(function (SalesDocumentLine $line) use ($otherQty, $returnedQty, $nextQty) {
+                $done = (int) ($otherQty[$line->id] ?? 0) + (int) ($returnedQty[$line->id] ?? 0) + (int) ($nextQty[$line->id] ?? 0);
 
                 return $done >= (int) $line->quantity;
             });
@@ -250,10 +270,13 @@ class SaleSettler
     {
         return [
             'lines.settlementLines',
+            'lines.returnLines',
             'paymentMethod',
             'convertedTo',
             'settlements.paymentMethod',
+            'settlements.invoice',
             'settlements.lines',
+            'returns.lines',
         ];
     }
 }
