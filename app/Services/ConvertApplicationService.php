@@ -11,6 +11,7 @@ use App\Enums\SubscriptionStatus;
 use App\Enums\UserRole;
 use App\Enums\UserStatus;
 use App\Models\Application;
+use App\Models\BillingInvoice;
 use App\Models\ApplicationActivity;
 use App\Models\Company;
 use App\Support\Locales;
@@ -26,6 +27,7 @@ class ConvertApplicationService
 {
     public function __construct(
         private readonly AccountProvisionNotifier $notifier,
+        private readonly BillingInvoiceService $billing,
     ) {}
 
     /**
@@ -129,6 +131,14 @@ class ConvertApplicationService
             $result['company'],
             $result['subscription'],
             $application,
+        );
+
+        // The invoice for what was bought goes to the owner's email, with the PDF attached.
+        $this->billing->issueAndSend(
+            $result['subscription'],
+            $result['payment'],
+            (int) ($input['periods'] ?? 1),
+            BillingInvoice::KIND_NEW,
         );
 
         return [

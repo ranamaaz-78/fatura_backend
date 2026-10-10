@@ -13,6 +13,14 @@ return [
         'driver' => env('WHATSAPP_DRIVER', 'link'),
     ],
 
+    // Who issues the subscription invoices. Tax id and address print only when they are filled in.
+    'billing' => [
+        'prefix' => env('BILLING_INVOICE_PREFIX', 'YK'),
+        'name' => env('BILLING_NAME', 'YK Digital Solutions'),
+        'tax_id' => env('BILLING_TAX_ID'),
+        'address' => env('BILLING_ADDRESS'),
+    ],
+
     'subscriptions' => [
         'grace_days' => (int) env('SUBSCRIPTION_GRACE_DAYS', 0),
         'reminder_days' => [7, 3, 1],

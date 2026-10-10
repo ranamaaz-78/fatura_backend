@@ -472,6 +472,7 @@ class ReportController extends Controller
         return SalesDocument::query()
             ->whereIn('sales_documents.type', self::SALE_TYPES)
             ->whereNull('sales_documents.from_settlement_id')
+            ->whereNull('sales_documents.from_document_id')
             ->whereNull('sales_documents.voided_at')
             ->when($range !== null, fn (Builder $query) => $query->whereBetween('sales_documents.issued_at', $range));
     }

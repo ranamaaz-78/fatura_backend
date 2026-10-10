@@ -22,7 +22,7 @@ class SaleIssuer
     {
         return DB::transaction(function () use ($user, $input) {
             $companyId = (int) $user->company_id;
-            $lines = $this->pricedLines($companyId, $input['lines'], $input['type'], moveStock: empty($input['from_settlement_id']));
+            $lines = $this->pricedLines($companyId, $input['lines'], $input['type'], moveStock: empty($input['from_settlement_id']) && empty($input['from_document_id']));
             [$lines, $discount] = $this->applyBillDiscount($lines, $input, $input['type']);
             $customer = $this->resolveCustomer($companyId, $input);
 
@@ -39,6 +39,7 @@ class SaleIssuer
                 'number' => $this->numbers->take($companyId, $input['type'], (int) $issuedAt->year),
                 'issued_at' => $issuedAt,
                 'from_settlement_id' => $input['from_settlement_id'] ?? null,
+                'from_document_id' => $input['from_document_id'] ?? null,
                 'expires_at' => $input['type'] === 'quotation' ? SalesDocument::expiryFor($issuedAt) : null,
                 'payment_status' => $input['payment_status'],
                 'payment_method_id' => $this->resolvePaymentMethod($companyId, $input),
@@ -436,7 +437,7 @@ class SaleIssuer
         }
 
         // Paid at the time of the proforma payment: keep that method even if it has since been switched off.
-        if (! empty($input['from_settlement_id'])) {
+        if (! empty($input['from_settlement_id']) || ! empty($input['from_document_id'])) {
             return (int) $input['payment_method_id'];
         }
 

@@ -7,9 +7,11 @@ use App\Enums\SubscriptionStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CompanyResource;
 use App\Http\Resources\SubscriptionResource;
+use App\Models\BillingInvoice;
 use App\Models\Company;
 use App\Models\Subscription;
 use App\Services\AccountProvisionNotifier;
+use App\Services\BillingInvoiceService;
 use App\Services\SubscriptionService;
 use App\Traits\ApiResponse;
 use Illuminate\Database\Eloquent\Builder;
@@ -78,7 +80,7 @@ class CompanyController extends Controller
         return $this->success(new CompanyResource($company->fresh(['owner', 'activeSubscription'])), __('Company updated.'));
     }
 
-    public function subscriptions(Request $request, Company $company, SubscriptionService $service): JsonResponse
+    public function subscriptions(Request $request, Company $company, SubscriptionService $service, BillingInvoiceService $billing): JsonResponse
     {
         $data = $request->validate([
             'plan_id' => ['required', Rule::exists('plans', 'id')],
@@ -93,6 +95,14 @@ class CompanyController extends Controller
         ]);
 
         $subscription = $service->start($company, $data, $request->user());
+
+        // A renewal or plan change is billed too: the invoice goes to the owner's email with the PDF attached.
+        $billing->issueAndSend(
+            $subscription,
+            $subscription->payments()->latest('id')->first(),
+            (int) ($data['periods'] ?? 1),
+            BillingInvoice::KIND_RENEWAL,
+        );
 
         return $this->success(
             new SubscriptionResource($subscription->load('payments.paymentMethod')),

@@ -40,6 +40,63 @@ class SalesDocumentTest extends TestCase
         $this->issue('proforma')->assertCreated()->assertJsonPath('data.number', "PF-{$year}/0001");
     }
 
+    public function test_only_invoices_carry_a_verification_code_and_anyone_holding_it_can_verify_them(): void
+    {
+        $invoice = $this->issue('factura')->assertCreated();
+        $code = $invoice->json('data.verify_code');
+
+        $this->assertSame(24, strlen($code));
+        $this->assertNull($this->issue('albaran')->json('data.verify_code'));
+        $this->assertNull($this->issue('quotation')->json('data.verify_code'));
+        $this->assertNull($this->issue('proforma')->json('data.verify_code'));
+
+        // No login: this is what the QR code on the printed invoice opens.
+        $this->getJson("/api/public/invoices/verify/{$code}")
+            ->assertOk()
+            ->assertJsonPath('data.number', $invoice->json('data.number'))
+            ->assertJsonPath('data.voided', false)
+            ->assertJsonPath('data.company.name', $this->company->name)
+            ->assertJsonMissingPath('data.client_name')
+            ->assertJsonMissingPath('data.customer');
+
+        $this->getJson('/api/public/invoices/verify/does-not-exist-123456')->assertNotFound();
+        $this->getJson('/api/public/invoices/verify/short')->assertNotFound();
+    }
+
+    public function test_the_whole_invoice_can_be_opened_with_its_code_and_without_a_login(): void
+    {
+        $created = $this->issue('factura')->assertCreated();
+        $code = $created->json('data.verify_code');
+
+        $this->getJson("/api/public/invoices/verify/{$code}/document")
+            ->assertOk()
+            ->assertJsonPath('data.document.number', $created->json('data.number'))
+            ->assertJsonPath('data.document.type', 'factura')
+            ->assertJsonStructure(['data' => ['document' => ['lines'], 'company' => ['name', 'tax_id', 'currency'], 'template' => ['primary_color', 'font_key'], 'locale']])
+            // Nothing internal about the company leaves the server.
+            ->assertJsonMissingPath('data.company.notes')
+            ->assertJsonMissingPath('data.company.status')
+            ->assertJsonMissingPath('data.company.owner');
+
+        $this->getJson('/api/public/invoices/verify/not-a-real-code-123456/document')->assertNotFound();
+
+        // Only invoices open this way: a delivery note's id or number gives nothing.
+        $albaran = $this->issue('albaran')->assertCreated();
+        $this->getJson('/api/public/invoices/verify/'.str_repeat('a', 24).'/document')->assertNotFound();
+        $this->assertNull($albaran->json('data.verify_code'));
+    }
+
+    public function test_a_voided_invoice_is_reported_as_voided_when_scanned(): void
+    {
+        $created = $this->issue('factura')->assertCreated();
+        $document = SalesDocument::withoutGlobalScopes()->findOrFail($created->json('data.id'));
+        $document->forceFill(['voided_at' => now(), 'void_reason' => 'Mistake'])->save();
+
+        $this->getJson('/api/public/invoices/verify/'.$created->json('data.verify_code'))
+            ->assertOk()
+            ->assertJsonPath('data.voided', true);
+    }
+
     public function test_an_abono_can_no_longer_be_issued(): void
     {
         $this->issue('abono')->assertStatus(422);

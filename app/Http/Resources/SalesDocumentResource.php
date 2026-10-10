@@ -14,6 +14,7 @@ class SalesDocumentResource extends JsonResource
             'id' => $this->id,
             'type' => $this->type,
             'number' => $this->number,
+            'verify_code' => $this->type === 'factura' ? $this->verify_code : null,
             'issued_at' => $this->issued_at?->toIso8601String(),
             'expires_at' => $this->expires_at?->toIso8601String(),
             'is_expired' => $this->isExpired(),
@@ -62,11 +63,17 @@ class SalesDocumentResource extends JsonResource
             'settled_cents' => $this->settledCents(),
             'returned_cents' => (int) $this->returned_cents,
             'from_settlement_id' => $this->from_settlement_id,
+            'from_document_id' => $this->from_document_id,
+            'can_invoice' => $this->canInvoice(),
             'from_proforma' => $this->whenLoaded(
                 'fromSettlement',
                 fn () => $this->fromSettlement?->document === null
                     ? null
                     : ['id' => $this->fromSettlement->document->id, 'number' => $this->fromSettlement->document->number],
+            ),
+            'from_document' => $this->when(
+                $this->from_document_id !== null,
+                fn () => $this->fromDocument === null ? null : ['id' => $this->fromDocument->id, 'number' => $this->fromDocument->number],
             ),
             'is_fully_returned' => $this->isFullyReturned(),
             'is_partial' => $this->payment_status === 'partial',

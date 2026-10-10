@@ -8,6 +8,7 @@ use App\Models\CompanyPaymentMethod;
 use App\Models\SalesDocument;
 use App\Models\SalesDocumentReturn;
 use App\Models\SalesDocumentSettlement;
+use App\Services\AlbaranInvoicer;
 use App\Services\DocumentNumber;
 use App\Services\SaleIssuer;
 use App\Services\SaleReturner;
@@ -30,6 +31,7 @@ class SaleController extends Controller
         private readonly SaleSettler $settler,
         private readonly SaleReturner $returner,
         private readonly SettlementInvoicer $invoicer,
+        private readonly AlbaranInvoicer $albaranInvoicer,
         private readonly DocumentNumber $numbers,
     ) {}
 
@@ -223,6 +225,25 @@ class SaleController extends Controller
         ]);
 
         $invoice = $this->invoicer->invoice($request->user(), $sale, $settlement, $data['iva'] ?? [], $data['recargo_rate_id'] ?? null);
+
+        return $this->success(
+            new SalesDocumentResource($invoice),
+            __(':number issued.', ['number' => $invoice->number]),
+            201,
+        );
+    }
+
+    /** A delivery note turned into an invoice: same customer, pieces and prices, with IVA (and recargo) added, and no stock moved. */
+    public function invoiceAlbaran(Request $request, SalesDocument $sale): JsonResponse
+    {
+        $data = $request->validate([
+            'iva' => ['nullable', 'array'],
+            'iva.*' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            // A rate from Settings: recargo de equivalencia is added to the invoice.
+            'recargo_rate_id' => ['nullable', 'integer'],
+        ]);
+
+        $invoice = $this->albaranInvoicer->invoice($request->user(), $sale, $data['iva'] ?? [], $data['recargo_rate_id'] ?? null);
 
         return $this->success(
             new SalesDocumentResource($invoice),

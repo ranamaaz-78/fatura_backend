@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class SalesDocument extends Model
 {
@@ -29,6 +30,7 @@ class SalesDocument extends Model
         'created_by',
         'type',
         'number',
+        'verify_code',
         'issued_at',
         'expires_at',
         'payment_status',
@@ -56,7 +58,18 @@ class SalesDocument extends Model
         'total_cents',
         'returned_cents',
         'from_settlement_id',
+        'from_document_id',
     ];
+
+    protected static function booted(): void
+    {
+        // Every invoice gets the secret its QR code carries, whichever way it came to exist.
+        static::saving(function (SalesDocument $document) {
+            if ($document->type === 'factura' && blank($document->verify_code)) {
+                $document->verify_code = Str::lower(Str::random(24));
+            }
+        });
+    }
 
     // Names and places print in Proper Case ("taller de marta s.l." becomes "Taller de Marta S.L."), as on the company.
     protected function clientName(): Attribute
@@ -100,10 +113,35 @@ class SalesDocument extends Model
         return $this->belongsTo(SalesDocumentSettlement::class, 'from_settlement_id');
     }
 
-    /** An invoice made from a proforma payment is paper only: it moves no stock and adds no sale. */
+    /** The delivery note this invoice was made from, if any. */
+    public function fromDocument(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'from_document_id');
+    }
+
+    /** An invoice made from a proforma payment or a delivery note is paper only: it moves no stock and adds no sale. */
     public function isDerived(): bool
     {
-        return $this->from_settlement_id !== null;
+        return $this->from_settlement_id !== null || $this->from_document_id !== null;
+    }
+
+    /**
+     * A delivery note can be turned into an invoice once. If that invoice was voided, it can be done again.
+     * The stock already left with the delivery note, so the invoice moves none.
+     */
+    public function canInvoice(): bool
+    {
+        if ($this->type !== 'albaran' || $this->isVoided()) {
+            return false;
+        }
+
+        if (! $this->isConverted()) {
+            return true;
+        }
+
+        $invoice = $this->relationLoaded('convertedTo') ? $this->convertedTo : $this->convertedTo()->first();
+
+        return $invoice === null || $invoice->isVoided();
     }
 
     public function returns(): HasMany

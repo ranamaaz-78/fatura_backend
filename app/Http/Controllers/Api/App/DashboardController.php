@@ -32,6 +32,7 @@ class DashboardController extends Controller
         $paidDocuments = (int) SalesDocument::query()
             ->whereIn('type', ['factura', 'albaran'])
             ->whereNull('from_settlement_id')
+            ->whereNull('from_document_id')
             ->where('payment_status', 'paid')
             ->whereNull('voided_at')
             ->whereBetween('issued_at', $month)
@@ -213,6 +214,7 @@ class DashboardController extends Controller
         return SalesDocument::query()
             ->whereIn('sales_documents.type', self::SALE_TYPES)
             ->whereNull('sales_documents.from_settlement_id')
+            ->whereNull('sales_documents.from_document_id')
             ->whereNull('sales_documents.voided_at')
             ->when($range !== null, fn (Builder $query) => $query->whereBetween('sales_documents.issued_at', $range));
     }

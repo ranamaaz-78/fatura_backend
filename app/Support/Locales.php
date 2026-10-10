@@ -7,10 +7,23 @@ use Illuminate\Http\Request;
 /** The languages the product speaks, and how a request or a person's choice is turned into one of them. */
 final class Locales
 {
-    public const DEFAULT = 'en';
+    public const DEFAULT = 'es';
 
     /** @var list<string> */
     public const SUPPORTED = ['en', 'es'];
+
+    /** Runs the callback with the app speaking `$locale`, then puts the previous language back. */
+    public static function using(string $locale, callable $callback): mixed
+    {
+        $previous = app()->getLocale();
+        app()->setLocale($locale);
+
+        try {
+            return $callback();
+        } finally {
+            app()->setLocale($previous);
+        }
+    }
 
     public static function supported(?string $locale): bool
     {

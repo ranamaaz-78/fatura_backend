@@ -27,7 +27,10 @@ class LocaleTest extends TestCase
     {
         parent::setUp();
 
-        $this->company = Company::factory()->create();
+        // These tests are about the language itself, so no language is asked for unless a test says so.
+        unset($this->defaultHeaders['Accept-Language']);
+
+        $this->company = Company::factory()->create(['locale' => 'en']);
         Subscription::factory()->create(['company_id' => $this->company->id]);
         $this->owner = User::factory()->businessAdmin()->create(['company_id' => $this->company->id]);
     }
@@ -41,23 +44,26 @@ class LocaleTest extends TestCase
             ->json('message');
     }
 
-    public function test_a_visitor_gets_english_unless_they_ask_for_spanish(): void
+    public function test_a_visitor_gets_spanish_unless_they_ask_for_english(): void
     {
         $english = 'Unauthenticated.';
         $spanish = 'No has iniciado sesión.';
 
-        $this->assertSame($english, $this->unauthenticatedMessage());
-        $this->assertSame($spanish, $this->unauthenticatedMessage(['Accept-Language' => 'es']));
+        // The test client sends an English Accept-Language unless told otherwise, so "nothing asked" is an empty one.
+        $this->assertSame($spanish, $this->unauthenticatedMessage(['Accept-Language' => '']));
+        $this->assertSame($english, $this->unauthenticatedMessage(['Accept-Language' => 'en']));
+        $this->assertSame($english, $this->unauthenticatedMessage(['Accept-Language' => 'en-US,en;q=0.9,es;q=0.8']));
+        $this->assertSame($english, $this->unauthenticatedMessage([], '?lang=en'));
         $this->assertSame($spanish, $this->unauthenticatedMessage(['Accept-Language' => 'es-ES,es;q=0.9,en;q=0.8']));
-        $this->assertSame($spanish, $this->unauthenticatedMessage([], '?lang=es'));
-        // A language we do not speak falls back to English, and Spanish does not leak into the next request.
-        $this->assertSame($english, $this->unauthenticatedMessage(['Accept-Language' => 'fr-FR']));
-        $this->assertSame($english, $this->unauthenticatedMessage([], '?lang=fr'));
+        // A language we do not speak falls back to Spanish, and English does not leak into the next request.
+        $this->assertSame($spanish, $this->unauthenticatedMessage(['Accept-Language' => 'fr-FR']));
+        $this->assertSame($spanish, $this->unauthenticatedMessage([], '?lang=fr'));
     }
 
     public function test_the_query_beats_the_header(): void
     {
         $this->assertSame('No has iniciado sesión.', $this->unauthenticatedMessage(['Accept-Language' => 'en'], '?lang=es'));
+        $this->assertSame('Unauthenticated.', $this->unauthenticatedMessage(['Accept-Language' => 'es'], '?lang=en'));
     }
 
     public function test_a_signed_in_owner_follows_the_company_language_not_the_browser(): void

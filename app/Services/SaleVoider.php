@@ -31,6 +31,13 @@ class SaleVoider
                 ]);
             }
 
+            // The invoice made from a delivery note stands on it: void the invoice first.
+            if ($document->type === 'albaran' && $document->isConverted() && ! $document->canInvoice()) {
+                throw ValidationException::withMessages([
+                    'reason' => __('This delivery note already has an invoice. Void the invoice first.'),
+                ]);
+            }
+
             $document->load('lines');
             $this->restock($document);
 

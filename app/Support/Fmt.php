@@ -21,4 +21,10 @@ final class Fmt
     {
         return (string) Number::format($amount, precision: 2, locale: $locale ?? app()->getLocale());
     }
+
+    /** An amount with its currency, in the language's style. Spanish writes the dollar as "US$"; we print the plain "USD" code. */
+    public static function currency(float|int $amount, string $currency, ?string $locale = null): string
+    {
+        return str_replace('US$', 'USD', (string) Number::currency($amount, $currency, $locale ?? app()->getLocale()));
+    }
 }

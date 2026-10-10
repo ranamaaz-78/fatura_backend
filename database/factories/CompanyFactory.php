@@ -20,6 +20,7 @@ class CompanyFactory extends Factory
         $name = fake()->unique()->company();
 
         return [
+            'locale' => 'en',
             'name' => $name,
             'slug' => Str::slug($name).'-'.fake()->unique()->numberBetween(1, 99999),
             'email' => fake()->unique()->companyEmail(),

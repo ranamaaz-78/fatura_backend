@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\App as Tenant;
 use App\Http\Controllers\Api\Auth;
 use App\Http\Controllers\Api\PublicSite\ApplicationController as PublicApplicationController;
 use App\Http\Controllers\Api\PublicSite\PlanController as PublicPlanController;
+use App\Http\Controllers\Api\PublicSite\InvoiceVerificationController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', function () {
@@ -17,6 +18,8 @@ Route::get('/health', function () {
 
 Route::prefix('public')->group(function () {
     Route::get('/plans', [PublicPlanController::class, 'index']);
+    Route::get('/invoices/verify/{code}', [InvoiceVerificationController::class, 'show'])->middleware('throttle:30,1');
+    Route::get('/invoices/verify/{code}/document', [InvoiceVerificationController::class, 'document'])->middleware('throttle:30,1');
     Route::post('/applications/otp', [PublicApplicationController::class, 'requestOtp'])->middleware('throttle:6,1');
     Route::post('/applications', [PublicApplicationController::class, 'store'])->middleware('throttle:10,1');
 });
@@ -118,6 +121,7 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::post('/sales/{sale}/convert', [Tenant\SaleController::class, 'convert']);
         Route::patch('/sales/{sale}/payment', [Tenant\SaleController::class, 'updatePayment']);
         Route::post('/sales/{sale}/settle', [Tenant\SaleController::class, 'settle']);
+        Route::post('/sales/{sale}/invoice', [Tenant\SaleController::class, 'invoiceAlbaran']);
         Route::post('/sales/{sale}/settlements/{settlement}/invoice', [Tenant\SaleController::class, 'invoiceSettlement']);
         Route::post('/sales/{sale}/returns', [Tenant\SaleController::class, 'returnPieces']);
         Route::delete('/sales/{sale}/returns/{return}', [Tenant\SaleController::class, 'cancelReturn']);
