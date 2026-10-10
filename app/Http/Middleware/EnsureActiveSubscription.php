@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Enums\CompanyStatus;
+use App\Enums\UserStatus;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -13,6 +14,12 @@ class EnsureActiveSubscription
     {
         $user = $request->user();
         $company = $user?->company;
+
+        if ($user !== null && $user->status === UserStatus::Disabled) {
+            $user->currentAccessToken()?->delete();
+
+            return $this->blocked(__('This user account has been disabled.'), 'USER_DISABLED', 403);
+        }
 
         if ($company === null) {
             return $this->blocked(__('Your account is not linked to a company yet.'), 'NO_COMPANY');

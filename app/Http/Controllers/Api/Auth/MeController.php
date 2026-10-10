@@ -23,6 +23,8 @@ class MeController extends Controller
         return $this->success([
             'user' => new UserResource($user),
             'role' => $user->role->value,
+            // Every "area.action" this person may use; the owner has them all.
+            'permissions' => $user->permissionList(),
             // The language this person sees: their own, else their company's, else the default.
             'locale' => $user->preferredLocale(),
             'company' => $company ? new CompanyResource($company) : null,

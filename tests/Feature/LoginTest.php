@@ -27,7 +27,7 @@ class LoginTest extends TestCase
         $this->assertNotNull($admin->fresh()->last_login_at);
     }
 
-    public function test_wrong_credentials_are_refused(): void
+    public function test_a_wrong_password_says_the_password_is_wrong(): void
     {
         User::factory()->superAdmin()->create(['email' => 'admin@fatura.test']);
 
@@ -36,7 +36,21 @@ class LoginTest extends TestCase
             'password' => 'wrong',
         ])
             ->assertStatus(422)
-            ->assertJsonPath('code', 'INVALID_CREDENTIALS');
+            ->assertJsonPath('code', 'WRONG_PASSWORD')
+            ->assertJsonPath('message', 'The password is incorrect.')
+            ->assertJsonValidationErrors('password');
+    }
+
+    public function test_an_email_with_no_account_says_so(): void
+    {
+        $this->postJson('/api/auth/login', [
+            'email' => 'nobody@fatura.test',
+            'password' => 'whatever-1',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'ACCOUNT_NOT_FOUND')
+            ->assertJsonPath('message', 'No account is registered with this email address.')
+            ->assertJsonValidationErrors('email');
     }
 
     public function test_an_owner_who_never_set_a_password_cannot_sign_in(): void
@@ -50,7 +64,7 @@ class LoginTest extends TestCase
             'password' => 'password',
         ])
             ->assertStatus(422)
-            ->assertJsonPath('code', 'INVALID_CREDENTIALS');
+            ->assertJsonPath('code', 'PASSWORD_NOT_SET');
     }
 
     public function test_a_disabled_user_is_rejected(): void

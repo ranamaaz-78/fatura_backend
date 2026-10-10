@@ -38,16 +38,16 @@ class CompanyPaymentMethodTest extends TestCase
     public function test_a_method_can_be_added_renamed_toggled_and_removed(): void
     {
         $id = $this->actingAs($this->owner, 'sanctum')
-            ->postJson('/api/app/payment-methods', ['name' => 'EasyPaisa'])
+            ->postJson('/api/app/payment-methods', ['name' => 'Bizum'])
             ->assertCreated()
-            ->assertJsonPath('data.name', 'EasyPaisa')
+            ->assertJsonPath('data.name', 'Bizum')
             ->assertJsonPath('data.is_active', true)
             ->json('data.id');
 
         $this->actingAs($this->owner, 'sanctum')
-            ->patchJson("/api/app/payment-methods/{$id}", ['name' => 'JazzCash'])
+            ->patchJson("/api/app/payment-methods/{$id}", ['name' => 'Revolut'])
             ->assertOk()
-            ->assertJsonPath('data.name', 'JazzCash');
+            ->assertJsonPath('data.name', 'Revolut');
 
         $this->actingAs($this->owner, 'sanctum')
             ->patchJson("/api/app/payment-methods/{$id}/active", ['is_active' => false])

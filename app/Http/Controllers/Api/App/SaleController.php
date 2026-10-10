@@ -15,6 +15,7 @@ use App\Services\SaleReturner;
 use App\Services\SaleSettler;
 use App\Services\SaleVoider;
 use App\Services\SettlementInvoicer;
+use App\Support\Permissions;
 use App\Traits\ApiResponse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -35,6 +36,28 @@ class SaleController extends Controller
         private readonly DocumentNumber $numbers,
     ) {}
 
+    /**
+     * The four document kinds share these routes, so what a member may do depends on the document: a cashier can
+     * issue invoices but not void them, an accountant can read them but not make them. Voiding is "void",
+     * converting is "create" on what it becomes, recording or changing a payment (and returns) is "pay".
+     */
+    private function allow(Request $request, string $type, string $action): void
+    {
+        $area = Permissions::forDocument($type);
+
+        // Something this kind of document cannot do at all (a quotation is never "paid", an invoice is never "edited"):
+        // there is nothing to tick for it, so seeing the document is enough to reach the answer that it is not possible.
+        if (! in_array($action, Permissions::modules()[$area] ?? [], true)) {
+            $action = 'view';
+        }
+
+        $permission = $area.'.'.$action;
+
+        if (! $request->user()->hasPermission($permission)) {
+            abort(Permissions::denied());
+        }
+    }
+
     public function index(Request $request): JsonResponse
     {
         $filters = $request->validate([
@@ -46,7 +69,17 @@ class SaleController extends Controller
             'per_page' => ['nullable', 'integer', 'min:5', 'max:50'],
         ]);
 
+        $viewable = collect(SalesDocument::TYPES)
+            ->filter(fn (string $type) => $request->user()->hasPermission(Permissions::forDocument($type).'.view'))
+            ->values()
+            ->all();
+
+        if (isset($filters['type']) && ! in_array($filters['type'], $viewable, true)) {
+            abort(Permissions::denied());
+        }
+
         $base = SalesDocument::query()
+            ->whereIn('type', $viewable)
             ->when($filters['type'] ?? null, function (Builder $query, string $type) {
                 $query->where('type', $type);
                 if ($type === 'quotation') {
@@ -91,6 +124,8 @@ class SaleController extends Controller
             'type' => ['required', Rule::in(SalesDocument::ISSUABLE)],
         ])['type'];
 
+        $this->allow($request, $type, 'create');
+
         $companyId = (int) $request->user()->company_id;
 
         return $this->success([
@@ -102,6 +137,7 @@ class SaleController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate($this->documentRules());
+        $this->allow($request, $data['type'], 'create');
 
         $data['issued_at'] = $request->date('issued_at');
         $data['save_customer'] = (bool) ($data['save_customer'] ?? false);
@@ -115,8 +151,10 @@ class SaleController extends Controller
         );
     }
 
-    public function show(SalesDocument $sale): JsonResponse
+    public function show(Request $request, SalesDocument $sale): JsonResponse
     {
+        $this->allow($request, $sale->type, 'view');
+
         $sale->load([...SaleSettler::relations(), 'fromSettlement.document']);
 
         return $this->success(new SalesDocumentResource($sale));
@@ -124,6 +162,8 @@ class SaleController extends Controller
 
     public function update(Request $request, SalesDocument $sale): JsonResponse
     {
+        $this->allow($request, $sale->type, 'update');
+
         $data = $request->validate($this->documentRules(forUpdate: true));
         $data['issued_at'] = $request->date('issued_at');
         $data['save_customer'] = (bool) ($data['save_customer'] ?? false);
@@ -144,6 +184,8 @@ class SaleController extends Controller
             'payment_method_id' => ['nullable', 'integer'],
         ]);
 
+        $this->allow($request, $data['type'], 'create');
+
         $data['issued_at'] = now();
 
         $document = $this->issuer->convert($request->user(), $sale, $data);
@@ -157,6 +199,8 @@ class SaleController extends Controller
 
     public function updatePayment(Request $request, SalesDocument $sale): JsonResponse
     {
+        $this->allow($request, $sale->type, 'pay');
+
         if (! SalesDocument::settlesPayment($sale->type)) {
             return $this->error(__('This document is not paid from here.'), 422);
         }
@@ -196,6 +240,8 @@ class SaleController extends Controller
 
     public function settle(Request $request, SalesDocument $sale): JsonResponse
     {
+        $this->allow($request, $sale->type, 'pay');
+
         $data = $request->validate([
             'payment_method_id' => ['required', 'integer'],
             'lines' => ['required', 'array', 'min:1', 'max:100'],
@@ -217,6 +263,9 @@ class SaleController extends Controller
     /** The invoice for one payment on a proforma: its pieces and prices, with IVA added, and no stock moved. */
     public function invoiceSettlement(Request $request, SalesDocument $sale, SalesDocumentSettlement $settlement): JsonResponse
     {
+        $this->allow($request, 'factura', 'create');
+        $this->allow($request, $sale->type, 'view');
+
         $data = $request->validate([
             'iva' => ['nullable', 'array'],
             'iva.*' => ['nullable', 'numeric', 'min:0', 'max:100'],
@@ -236,6 +285,9 @@ class SaleController extends Controller
     /** A delivery note turned into an invoice: same customer, pieces and prices, with IVA (and recargo) added, and no stock moved. */
     public function invoiceAlbaran(Request $request, SalesDocument $sale): JsonResponse
     {
+        $this->allow($request, 'factura', 'create');
+        $this->allow($request, $sale->type, 'view');
+
         $data = $request->validate([
             'iva' => ['nullable', 'array'],
             'iva.*' => ['nullable', 'numeric', 'min:0', 'max:100'],
@@ -255,6 +307,8 @@ class SaleController extends Controller
     /** Pieces of a proforma that came back: they go back into stock and stop counting as owed. */
     public function returnPieces(Request $request, SalesDocument $sale): JsonResponse
     {
+        $this->allow($request, $sale->type, 'pay');
+
         $data = $request->validate([
             'lines' => ['required', 'array', 'min:1', 'max:100'],
             'lines.*.line_id' => ['required', 'integer'],
@@ -271,8 +325,10 @@ class SaleController extends Controller
         );
     }
 
-    public function cancelReturn(SalesDocument $sale, SalesDocumentReturn $return): JsonResponse
+    public function cancelReturn(Request $request, SalesDocument $sale, SalesDocumentReturn $return): JsonResponse
     {
+        $this->allow($request, $sale->type, 'pay');
+
         $document = $this->returner->cancel($sale, $return);
 
         return $this->success(
@@ -283,6 +339,8 @@ class SaleController extends Controller
 
     public function updateSettlement(Request $request, SalesDocument $sale, SalesDocumentSettlement $settlement): JsonResponse
     {
+        $this->allow($request, $sale->type, 'pay');
+
         $data = $request->validate([
             'lines' => ['required', 'array', 'min:1', 'max:100'],
             'lines.*.line_id' => ['required', 'integer'],
@@ -299,6 +357,8 @@ class SaleController extends Controller
 
     public function void(Request $request, SalesDocument $sale): JsonResponse
     {
+        $this->allow($request, $sale->type, 'void');
+
         $data = $request->validate([
             'reason' => ['required', 'string', 'min:3', 'max:500'],
         ]);

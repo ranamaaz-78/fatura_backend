@@ -28,6 +28,11 @@
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
+        <!-- Tests must not depend on the developer's .env: these are the values the tests were written for. -->
+        <env name="SUBSCRIPTION_GRACE_DAYS" value="0"/>
+        <env name="QUOTATION_VALID_DAYS" value="7"/>
+        <env name="BUSINESS_TIMEZONE" value="UTC"/>
+        <env name="PHONE_DEFAULT_COUNTRY" value="ES"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>

@@ -16,7 +16,7 @@ class PaymentMethodFactory extends Factory
      */
     public function definition(): array
     {
-        $name = fake()->unique()->randomElement(['Cash', 'Bank transfer', 'JazzCash', 'Easypaisa', 'PayPal']).' '.fake()->unique()->numberBetween(1, 9999);
+        $name = fake()->unique()->randomElement(['Cash', 'Bank transfer', 'PayPal']).' '.fake()->unique()->numberBetween(1, 9999);
 
         return [
             'name' => $name,

@@ -1,0 +1,72 @@
+{
+  "faqs": [
+    {
+      "question_en": "How do I get my account?",
+      "answer_en": "Fill in the application form and confirm your email with the code we send. Our team then calls you, activates your plan, and sends your login link by email and WhatsApp.",
+      "question_es": "¿Cómo consigo mi cuenta?",
+      "answer_es": "Rellena el formulario de solicitud y confirma tu email con el código que te enviamos. Después, nuestro equipo te llama, activa tu plan y te envía el enlace de acceso por email y WhatsApp."
+    },
+    {
+      "question_en": "What happens during setup?",
+      "answer_en": "We confirm your business details, invoice numbering and taxes, and help you import your products so you can sell on day one.",
+      "question_es": "¿Qué ocurre durante la puesta en marcha?",
+      "answer_es": "Confirmamos los datos de tu negocio, la numeración de facturas y los impuestos, y te ayudamos a importar tus productos para que puedas vender desde el primer día."
+    },
+    {
+      "question_en": "Does it handle Spanish IVA and recargo de equivalencia?",
+      "answer_en": "Yes. You set your own IVA rates, add recargo de equivalencia on invoices and quotations, and keep N.I.F / N.I.E on every client.",
+      "question_es": "¿Gestiona el IVA español y el recargo de equivalencia?",
+      "answer_es": "Sí. Tú defines tus tipos de IVA, añades el recargo de equivalencia en facturas y presupuestos, y guardas el NIF/NIE de cada cliente."
+    },
+    {
+      "question_en": "Can I use it on my phone?",
+      "answer_en": "Yes, the website works in your phone's browser today. The Android and iPhone apps are coming soon and will use the same account, with barcode scanning through the camera.",
+      "question_es": "¿Puedo usarlo en el móvil?",
+      "answer_es": "Sí, la web ya funciona en el navegador de tu móvil. Las apps de Android e iPhone llegarán pronto y usarán la misma cuenta, con lectura de códigos de barras con la cámara."
+    },
+    {
+      "question_en": "Can I send invoices on WhatsApp?",
+      "answer_en": "Yes. Connect your WhatsApp once, then send the PDF to your customer straight from the sale. You can also download any document as a PDF or an image.",
+      "question_es": "¿Puedo enviar facturas por WhatsApp?",
+      "answer_es": "Sí. Conecta tu WhatsApp una vez y envía el PDF a tu cliente directamente desde la venta. También puedes descargar cualquier documento como PDF o como imagen."
+    },
+    {
+      "question_en": "Can a delivery note leave out my company details?",
+      "answer_en": "Yes. A delivery note is a plain slip with no company name, address or logo, just the client, the items and a space to sign.",
+      "question_es": "¿Puede un albarán omitir los datos de mi empresa?",
+      "answer_es": "Sí. Un albarán es un comprobante sencillo sin nombre de empresa, dirección ni logotipo: solo el cliente, los artículos y un espacio para firmar."
+    },
+    {
+      "question_en": "How do I pay?",
+      "answer_en": "We agree the payment method with you on the setup call. Your plan runs for one period from the day it is activated.",
+      "question_es": "¿Cómo se paga?",
+      "answer_es": "Acordamos contigo el método de pago en la llamada de puesta en marcha. Tu plan dura un periodo desde el día en que se activa."
+    },
+    {
+      "question_en": "Do I need special hardware?",
+      "answer_en": "No. Any computer or phone works. USB and Bluetooth barcode scanners and normal printers are supported if you have them.",
+      "question_es": "¿Necesito un equipo especial?",
+      "answer_es": "No. Sirve cualquier ordenador o móvil. Si los tienes, se admiten lectores de códigos de barras USB y Bluetooth e impresoras normales."
+    },
+    {
+      "question_en": "What if I stop paying?",
+      "answer_en": "Your account pauses at the end of the period. Nothing is deleted, and everything is back as soon as you renew.",
+      "question_es": "¿Qué pasa si dejo de pagar?",
+      "answer_es": "Tu cuenta se pausa al final del periodo. No se elimina nada y todo vuelve en cuanto renuevas."
+    }
+  ],
+  "pages": {
+    "terms": {
+      "title_en": "Terms and conditions",
+      "title_es": "Términos y condiciones",
+      "body_en": "The short version of how YK Digital Solutions works. If anything here is unclear, ask us before you apply.\n\n## The service\nYK Digital Solutions is invoicing, stock and barcode software for small businesses, available on the web, with Android and iPhone apps coming soon.\n\nYou apply, our team calls you to confirm your details, and we activate your plan. Your plan runs for one period from the day it is activated.\n\n## Price and payment\nThere is no setup fee and no long contract. You pay period to period, and we agree the payment method with you on the setup call.\n\n## If a period ends\nYou can cancel at any time. If a period ends without renewal, your account pauses. Nothing is deleted, and everything is back as soon as you renew.\n\n## Your data and your responsibilities\nThe products, clients, invoices and other records you enter belong to your business and are private to it.\n\nYou are responsible for the accuracy of what you issue, including the tax rates and tax details you set, and for following the tax rules that apply to you. Keep your password safe and tell us if you think someone else has it.\n\n## Fair use\nDo not use the service for anything unlawful, to harm others, or to try to reach another business’s data.\n\n## Changes\nWe may improve the service and update these terms. When we make a meaningful change we will tell you.",
+      "body_es": "La versión corta de cómo funciona YK Digital Solutions. Si algo no queda claro, pregúntanos antes de solicitarlo.\n\n## El servicio\nYK Digital Solutions es un software de facturación, existencias y códigos de barras para pequeños negocios, disponible en la web, con apps para Android e iPhone próximamente.\n\nSolicitas el servicio, nuestro equipo te llama para confirmar tus datos y activamos tu plan. Tu plan dura un periodo desde el día en que se activa.\n\n## Precio y pago\nNo hay cuota de alta ni contrato de permanencia. El pago se realiza periodo a periodo y el método de pago se acuerda en la llamada de puesta en marcha.\n\n## Si termina un periodo\nPuedes cancelar en cualquier momento. Si un periodo termina sin renovación, tu cuenta se pausa. No se elimina nada y todo vuelve en cuanto renuevas.\n\n## Tus datos y tus responsabilidades\nLos productos, clientes, facturas y demás registros que introduces pertenecen a tu negocio y son privados para él.\n\nEres responsable de la exactitud de lo que emites, incluidos los tipos impositivos y los datos fiscales que configures, y de cumplir las normas fiscales que te sean aplicables. Mantén tu contraseña a salvo e infórmanos si crees que otra persona la conoce.\n\n## Uso razonable\nNo utilices el servicio para nada ilícito, para perjudicar a terceros ni para intentar acceder a los datos de otro negocio.\n\n## Cambios\nPodemos mejorar el servicio y actualizar estas condiciones. Cuando hagamos un cambio relevante, te lo comunicaremos."
+    },
+    "privacy": {
+      "title_en": "Privacy policy",
+      "title_es": "Política de privacidad",
+      "body_en": "What we collect, why, and who sees it. We keep it to what we need to run the service.\n\n## When you apply\nWe collect your name, business name, email, phone and WhatsApp number, city and country, the plan you picked, and anything you choose to write in the message box.\n\nWe also record your IP address and browser details to protect the form from spam, and we email you a one-time code to confirm the address is yours.\n\n## Why we use it\nTo contact you, set up your account and answer your questions. We do not sell your details and we do not use them for advertising.\n\n## Who handles it\nOnly our team sees your application. We use email and WhatsApp to reach you, so those services carry the messages we send.\n\n## Once you are a customer\nYour products, clients, invoices and other records are stored separately for each business and are not visible to any other business.\n\n## This website\nWe do not run advertising trackers. The site remembers your theme choice and, if you log in, your session on your own device. Fonts are loaded from Google Fonts.\n\n## Your rights\nYou can ask to see, correct or delete the details we hold about you at any time. Write to us using the contact details on this page.",
+      "body_es": "Qué recogemos, por qué y quién lo ve. Nos limitamos a lo que necesitamos para dar el servicio.\n\n## Cuando solicitas el servicio\nRecogemos tu nombre, el nombre del negocio, el email, el teléfono y el número de WhatsApp, la ciudad y el país, el plan que has elegido y todo lo que decidas escribir en el cuadro de mensaje.\n\nTambién registramos tu dirección IP y los datos del navegador para proteger el formulario del spam, y te enviamos por email un código de un solo uso para confirmar que la dirección es tuya.\n\n## Para qué los usamos\nPara contactar contigo, configurar tu cuenta y responder a tus consultas. No vendemos tus datos ni los utilizamos con fines publicitarios.\n\n## Quién se encarga\nSolo nuestro equipo ve tu solicitud. Usamos el correo electrónico y WhatsApp para contactar contigo, por lo que esos servicios transportan los mensajes que enviamos.\n\n## Una vez eres cliente\nTus productos, clientes, facturas y demás registros se almacenan por separado para cada negocio y no son visibles para ningún otro negocio.\n\n## Este sitio web\nNo utilizamos rastreadores publicitarios. El sitio recuerda la elección de tema y, si inicias sesión, tu sesión en tu propio dispositivo. Las fuentes se cargan desde Google Fonts.\n\n## Tus derechos\nPuedes solicitar en cualquier momento el acceso, la rectificación o la supresión de los datos que conservamos sobre ti. Escríbenos a través de los datos de contacto de esta página."
+    }
+  }
+}

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Enums\CompanyStatus;
+use App\Enums\UserRole;
 use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
@@ -37,10 +38,23 @@ class LoginController extends Controller
 
         $user = User::where('email', $data['email'])->first();
 
-        if ($user === null || $user->password === null || ! Hash::check($data['password'], $user->password)) {
+        // Say which part is wrong, so the person knows whether to fix the email or the password.
+        if ($user === null) {
             RateLimiter::hit($throttleKey);
 
-            return $this->coded(__('These credentials do not match our records.'), 'INVALID_CREDENTIALS', 422);
+            return $this->coded(__('No account is registered with this email address.'), 'ACCOUNT_NOT_FOUND', 422);
+        }
+
+        if ($user->password === null) {
+            RateLimiter::hit($throttleKey);
+
+            return $this->coded(__('This account has no password yet. Use the link in your invitation email, or choose "Forgot password".'), 'PASSWORD_NOT_SET', 422);
+        }
+
+        if (! Hash::check($data['password'], $user->password)) {
+            RateLimiter::hit($throttleKey);
+
+            return $this->coded(__('The password is incorrect.'), 'WRONG_PASSWORD', 422);
         }
 
         if ($user->status === UserStatus::Disabled) {
@@ -51,6 +65,15 @@ class LoginController extends Controller
 
         if ($company !== null && $company->status === CompanyStatus::Suspended) {
             return $this->coded(__('This company account has been suspended.'), 'COMPANY_SUSPENDED', 403);
+        }
+
+        // The owner can still sign in to see the Subscription page and renew; the team waits until it is active.
+        if ($company !== null && $user->role === UserRole::Staff) {
+            $subscription = $company->activeSubscription;
+
+            if ($subscription === null || ! $subscription->isUsable((int) config('fatura.subscriptions.grace_days'))) {
+                return $this->coded(__('Your company subscription has expired. Please contact your administrator.'), 'SUBSCRIPTION_EXPIRED', 403);
+            }
         }
 
         RateLimiter::clear($throttleKey);
@@ -79,7 +102,12 @@ class LoginController extends Controller
             'message' => $message,
             'data' => [],
             'code' => $code,
-            'errors' => $code === 'INVALID_CREDENTIALS' ? ['email' => [$message]] : [],
+            // Shown under the box it is about.
+            'errors' => match ($code) {
+                'ACCOUNT_NOT_FOUND' => ['email' => [$message]],
+                'WRONG_PASSWORD', 'PASSWORD_NOT_SET' => ['password' => [$message]],
+                default => [],
+            },
         ], $status);
     }
 }

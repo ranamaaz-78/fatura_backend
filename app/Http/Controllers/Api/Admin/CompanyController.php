@@ -10,6 +10,7 @@ use App\Http\Resources\SubscriptionResource;
 use App\Models\BillingInvoice;
 use App\Models\Company;
 use App\Models\Subscription;
+use App\Models\User;
 use App\Services\AccountProvisionNotifier;
 use App\Services\BillingInvoiceService;
 use App\Services\SubscriptionService;
@@ -76,6 +77,11 @@ class CompanyController extends Controller
         ]);
 
         $company->update($data);
+
+        // A suspended company is closed to everyone at once, not at their next sign-in.
+        if ($company->status === CompanyStatus::Suspended) {
+            User::query()->where('company_id', $company->id)->get()->each(fn (User $member) => $member->tokens()->delete());
+        }
 
         return $this->success(new CompanyResource($company->fresh(['owner', 'activeSubscription'])), __('Company updated.'));
     }

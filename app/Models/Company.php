@@ -37,6 +37,7 @@ class Company extends Model
         'currency',
         'locale',
         'document_locale',
+        'role_presets',
         'logo_path',
         'status',
         'notes',
@@ -46,6 +47,7 @@ class Company extends Model
     {
         return [
             'status' => CompanyStatus::class,
+            'role_presets' => 'array',
         ];
     }
 

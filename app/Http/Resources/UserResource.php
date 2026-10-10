@@ -17,6 +17,7 @@ class UserResource extends JsonResource
             'whatsapp' => $this->whatsapp,
             'role' => $this->role->value,
             'status' => $this->status->value,
+            'team_role' => $this->team_role,
             'company_id' => $this->company_id,
             'locale' => $this->locale,
             'last_login_at' => $this->last_login_at?->toIso8601String(),

@@ -7,6 +7,7 @@ use App\Enums\UserStatus;
 use App\Mail\PasswordResetMail;
 use App\Notifications\InvitePasswordNotification;
 use App\Support\Locales;
+use App\Support\Permissions;
 use App\Support\Phone;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -32,6 +33,8 @@ class User extends Authenticatable implements HasLocalePreference
         'role',
         'company_id',
         'status',
+        'permissions',
+        'team_role',
         'locale',
         'last_login_at',
     ];
@@ -49,6 +52,7 @@ class User extends Authenticatable implements HasLocalePreference
             'password' => 'hashed',
             'role' => UserRole::class,
             'status' => UserStatus::class,
+            'permissions' => 'array',
         ];
     }
 
@@ -71,6 +75,37 @@ class User extends Authenticatable implements HasLocalePreference
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    /** The company owner: may do everything, and is the only one who can manage the team. */
+    public function isOwner(): bool
+    {
+        return $this->role === UserRole::BusinessAdmin;
+    }
+
+    /**
+     * Every "area.action" this person may use. The owner has them all; a team member has what the owner
+     * ticked for them (a staff row from before permissions existed counts as a Manager).
+     *
+     * @return list<string>
+     */
+    public function permissionList(): array
+    {
+        if ($this->isOwner()) {
+            return Permissions::all();
+        }
+
+        if ($this->role !== UserRole::Staff) {
+            return [];
+        }
+
+        return Permissions::normalize($this->permissions ?? Permissions::preset('manager'));
+    }
+
+    /** "invoices.create": may this person do it? (Named so it does not clash with Laravel's own can().) */
+    public function hasPermission(string $permission): bool
+    {
+        return in_array($permission, $this->permissionList(), true);
     }
 
     public function isSuperAdmin(): bool
