@@ -4,6 +4,8 @@ $local = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'capacitor://localhost',
+    // The Windows app (fatura_desktop) serves the site from this address.
+    'app://yk-digital',
     'https://localhost',
     'http://localhost',
 ];
