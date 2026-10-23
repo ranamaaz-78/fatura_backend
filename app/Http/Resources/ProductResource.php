@@ -11,7 +11,6 @@ class ProductResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'sr_number' => $this->sr_number,
             'article' => $this->article,
             'description' => $this->description,
             'quantity' => $this->quantity,
@@ -20,9 +19,13 @@ class ProductResource extends JsonResource
             'supplier_id' => $this->supplier_id,
             'supplier' => $this->whenLoaded('supplier', fn () => $this->supplier?->name),
             'brand' => $this->brand,
-            'image_code' => $this->image_code,
+            'short_code' => $this->short_code,
             'barcode' => $this->barcode,
             'barcode_generated' => $this->barcode_generated,
+            // Labels: how many times it was sent to print, when last, and whether it ever was.
+            'label_print_count' => (int) $this->label_print_count,
+            'label_last_printed_at' => $this->label_last_printed_at?->toIso8601String(),
+            'label_printed' => (int) $this->label_print_count > 0,
             // Cents, so the client never has to undo a rounded decimal.
             'buying_price' => $this->buying_price,
             // The buying price before the latest change. Null until it has changed once.

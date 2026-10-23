@@ -293,14 +293,29 @@ class SalesDocument extends Model
             && $this->expires_at->isPast();
     }
 
-    public function canEdit(): bool
+    /** An open quotation: not converted, not past its week. */
+    public function canEditQuotation(): bool
     {
         return $this->type === 'quotation' && ! $this->isConverted() && ! $this->isExpired();
     }
 
+    /**
+     * A delivery note can be corrected while it is unpaid, as long as no invoice stands on it (an invoice that was
+     * voided no longer does). Once it is paid, partly or fully, it can only be voided.
+     */
+    public function canEditDeliveryNote(): bool
+    {
+        return $this->type === 'albaran' && $this->payment_status === 'pending' && $this->canInvoice();
+    }
+
+    public function canEdit(): bool
+    {
+        return $this->canEditQuotation() || $this->canEditDeliveryNote();
+    }
+
     public function canConvert(): bool
     {
-        return $this->canEdit();
+        return $this->canEditQuotation();
     }
 
     protected function casts(): array

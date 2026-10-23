@@ -218,7 +218,6 @@ return [
         'sort_order' => 'orden',
         'slug' => 'identificador',
         'article' => 'artículo',
-        'sr_number' => 'número SR',
         'barcode' => 'código de barras',
         'quantity' => 'cantidad',
         'minimum_stock' => 'existencias mínimas',

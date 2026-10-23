@@ -193,6 +193,8 @@ class ConvertApplicationTest extends TestCase
         $this->assertSame(3, NotificationLog::count());
         $this->assertTrue(NotificationLog::where('type', 'billing_invoice')->where('status', 'sent')->exists());
         Mail::assertSent(\App\Mail\BillingInvoiceMail::class, fn ($mail) => $mail->hasTo('grace@northwind.test') && str_starts_with($mail->pdf, '%PDF-'));
+        // The set-password link is in the account-ready email; the invoice email has no button.
+        Mail::assertSent(\App\Mail\BillingInvoiceMail::class, fn ($mail) => ! str_contains($mail->render(), '/set-password'));
         $this->assertTrue(NotificationLog::where('channel', NotificationChannel::Email)->where('status', 'sent')->exists());
         $this->assertTrue(NotificationLog::where('channel', NotificationChannel::WhatsApp)->exists());
         $this->assertDatabaseHas('invite_tokens', ['email' => 'grace@northwind.test']);

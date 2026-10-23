@@ -68,7 +68,7 @@ class PaymentLedgerTest extends TestCase
     public function test_the_ledger_can_be_filtered_by_day_week_and_custom_range(): void
     {
         $this->issuePaid('factura', 'Today', ['issued_at' => now()->toIso8601String()]);
-        $this->issuePaid('factura', 'Last month', ['issued_at' => now()->subMonth()->toIso8601String()]);
+        $this->issuePaid('factura', 'Last month', ['issued_at' => now()->subMonthNoOverflow()->endOfMonth()->toIso8601String()]);
 
         $this->actingAs($this->owner, 'sanctum')
             ->getJson('/api/app/payments?period=day')
@@ -81,8 +81,8 @@ class PaymentLedgerTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data.items');
 
-        $from = now()->subMonth()->toDateString();
-        $to = now()->subMonth()->toDateString();
+        $from = now()->subMonthNoOverflow()->endOfMonth()->toDateString();
+        $to = $from;
 
         $this->actingAs($this->owner, 'sanctum')
             ->getJson("/api/app/payments?period=custom&from={$from}&to={$to}")

@@ -25,7 +25,7 @@ class ProductController extends Controller
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:120'],
             'category_id' => ['nullable', 'integer'],
-            'stock' => ['nullable', Rule::in(['all', 'low', 'out', 'no_barcode'])],
+            'stock' => ['nullable', Rule::in(['all', 'low', 'out', 'no_barcode', 'labels', 'labels_pending', 'labels_printed'])],
             'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
         ]);
 
@@ -36,7 +36,6 @@ class ProductController extends Controller
                 $like = '%'.$search.'%';
                 $query->where(function (Builder $inner) use ($like) {
                     $inner->where('article', 'like', $like)
-                        ->orWhere('sr_number', 'like', $like)
                         ->orWhere('barcode', 'like', $like)
                         ->orWhere('brand', 'like', $like);
                 });
@@ -58,7 +57,10 @@ class ProductController extends Controller
                 'all' => Product::count(),
                 'low' => Product::lowStock()->count(),
                 'out' => Product::outOfStock()->count(),
+                // Products whose barcode the system made: their labels have to be printed ("no_barcode" is the same number).
                 'no_barcode' => Product::where('barcode_generated', true)->count(),
+                'labels_pending' => Product::where('barcode_generated', true)->where('label_print_count', 0)->count(),
+                'labels_printed' => Product::where('barcode_generated', true)->where('label_print_count', '>', 0)->count(),
             ],
             // Stock value is held at cost, in cents, like every other amount.
             'stock_value' => (int) Product::query()->sum(DB::raw('quantity * buying_price')),
@@ -112,6 +114,29 @@ class ProductController extends Controller
         return $this->success([], __('Product deleted.'));
     }
 
+    /**
+     * Records that labels were sent to print. Printed products are not taken out of any list: they show as printed and
+     * can be printed again, which counts again.
+     */
+    public function labelsPrinted(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1', 'max:500'],
+            'items.*.product_id' => ['required', 'integer'],
+        ]);
+
+        $ids = collect($data['items'])->pluck('product_id')->unique()->all();
+        $now = now();
+
+        // The company scope keeps this to the company's own products.
+        $updated = Product::query()->whereIn('id', $ids)->update([
+            'label_print_count' => DB::raw('label_print_count + 1'),
+            'label_last_printed_at' => $now,
+        ]);
+
+        return $this->success(['updated' => $updated]);
+    }
+
     public function generateBarcode(Request $request): JsonResponse
     {
         return $this->success(['barcode' => BarcodeAllocator::forCompany($request->user()->company_id)]);
@@ -122,7 +147,9 @@ class ProductController extends Controller
         match ($stock) {
             'low' => $query->lowStock(),
             'out' => $query->outOfStock(),
-            'no_barcode' => $query->where('barcode_generated', true),
+            'no_barcode', 'labels' => $query->where('barcode_generated', true),
+            'labels_pending' => $query->where('barcode_generated', true)->where('label_print_count', 0),
+            'labels_printed' => $query->where('barcode_generated', true)->where('label_print_count', '>', 0),
             default => $query,
         };
     }
@@ -136,11 +163,7 @@ class ProductController extends Controller
             'article' => [$required, 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
             'brand' => ['nullable', 'string', 'max:120'],
-            'image_code' => ['nullable', 'string', 'max:120'],
-            'sr_number' => [
-                'nullable', 'string', 'max:64',
-                Rule::unique('products', 'sr_number')->where('company_id', $companyId)->ignore($product?->id),
-            ],
+            'short_code' => ['nullable', 'string', 'max:120'],
             'barcode' => [
                 'nullable', 'string', 'max:64',
                 Rule::unique('products', 'barcode')->where('company_id', $companyId)->ignore($product?->id),

@@ -51,7 +51,8 @@ class SaleVoider
         });
     }
 
-    private function restock(SalesDocument $document): void
+    /** Puts the pieces of a document that took stock out back on the shelf. */
+    public function restock(SalesDocument $document): void
     {
         $direction = $document->stockDirection();
         // An invoice made from a proforma payment never took stock out.

@@ -342,12 +342,15 @@ class RolesPermissionsTest extends TestCase
     {
         $modules = Permissions::modules();
 
-        // A document cannot be edited once issued; only a quotation can.
-        foreach (['invoices', 'delivery_notes', 'proformas'] as $area) {
+        // An invoice or proforma cannot be edited once issued; a quotation can while it is open, and a delivery note
+        // while it is unpaid.
+        foreach (['invoices', 'proformas'] as $area) {
             $this->assertNotContains('update', $modules[$area], $area);
             $this->assertNotContains('delete', $modules[$area], $area);
         }
         $this->assertContains('update', $modules['quotes']);
+        $this->assertContains('update', $modules['delivery_notes']);
+        $this->assertNotContains('delete', $modules['delivery_notes']);
         $this->assertNotContains('delete', $modules['quotes']);
         $this->assertNotContains('void', $modules['proformas']);
         // Pages that only show things have nothing to tick but "view".

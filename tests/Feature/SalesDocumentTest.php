@@ -9,6 +9,8 @@ use App\Models\Product;
 use App\Models\SalesDocument;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Support\IssueDate;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -31,13 +33,13 @@ class SalesDocumentTest extends TestCase
 
     public function test_each_document_kind_gets_its_own_running_number(): void
     {
-        $year = now()->year;
+        $month = now()->format('Ym');
 
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$year}/0001");
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$year}/0002");
-        $this->issue('albaran')->assertCreated()->assertJsonPath('data.number', "AL-{$year}/0001");
-        $this->issue('quotation')->assertCreated()->assertJsonPath('data.number', "Q-{$year}/0001");
-        $this->issue('proforma')->assertCreated()->assertJsonPath('data.number', "PF-{$year}/0001");
+        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00001");
+        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00002");
+        $this->issue('albaran')->assertCreated()->assertJsonPath('data.number', "AL-{$month}/00001");
+        $this->issue('quotation')->assertCreated()->assertJsonPath('data.number', "Q-{$month}/00001");
+        $this->issue('proforma')->assertCreated()->assertJsonPath('data.number', "PF-{$month}/00001");
     }
 
     public function test_only_invoices_carry_a_verification_code_and_anyone_holding_it_can_verify_them(): void
@@ -413,7 +415,7 @@ class SalesDocumentTest extends TestCase
             'article' => 'Quoted cable',
         ]);
         $id = $this->issue('quotation', $product, 2)->json('data.id');
-        $number = 'Q-'.now()->year.'/0001';
+        $number = 'Q-'.now()->format('Ym').'/00001';
 
         $this->actingAs($this->owner, 'sanctum')
             ->patchJson("/api/app/sales/{$id}", $this->payload('quotation', [[
@@ -433,6 +435,136 @@ class SalesDocumentTest extends TestCase
         $this->assertSame(10, $product->fresh()->quantity);
     }
 
+    /** A team member made the way the owner makes one: through the team screen, from its ticks. */
+    private function member(string $role, array $permissions, string $email = 'member@shop.test'): User
+    {
+        $this->actingAs($this->owner, 'sanctum')->postJson('/api/app/team', [
+            'name' => 'Marta Rivas',
+            'email' => $email,
+            'password' => 'secret-pass-1',
+            'permissions' => $permissions,
+        ])->assertCreated();
+
+        return User::where('email', $email)->firstOrFail();
+    }
+
+    /** @return array<string, mixed> */
+    private function deliveryLines(Product $product, int $quantity, string $article = 'Edited cable'): array
+    {
+        return $this->payload('albaran', [[
+            'product_id' => $product->id,
+            'article' => $article,
+            'quantity' => $quantity,
+            'unit_price' => 700,
+            'discount_percent' => 0,
+            'iva_percent' => 0,
+        ]], client: ['client_name' => 'Ana Ruiz']);
+    }
+
+    public function test_an_unpaid_delivery_note_can_be_edited_and_only_the_difference_moves_stock(): void
+    {
+        $product = Product::factory()->create(['company_id' => $this->company->id, 'quantity' => 10, 'article' => 'Edited cable']);
+        $created = $this->issue('albaran', $product, 3)->assertCreated();
+        $id = $created->json('data.id');
+        $number = $created->json('data.number');
+        $issuedAt = SalesDocument::find($id)->issued_at->toIso8601String();
+        $this->assertSame(7, $product->fresh()->quantity);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->getJson("/api/app/sales/{$id}")
+            ->assertJsonPath('data.can_edit', true);
+
+        // 3 pieces become 5: two more leave the shelf, not five.
+        $this->actingAs($this->owner, 'sanctum')
+            ->patchJson("/api/app/sales/{$id}", $this->deliveryLines($product, 5))
+            ->assertOk()
+            ->assertJsonPath('data.number', $number)
+            ->assertJsonPath('data.client_name', 'Ana Ruiz')
+            ->assertJsonPath('data.lines.0.quantity', 5)
+            ->assertJsonPath('data.total_cents', 3500);
+        $this->assertSame(5, $product->fresh()->quantity);
+        $this->assertSame($issuedAt, SalesDocument::find($id)->issued_at->toIso8601String());
+
+        // and down to 1: four come back.
+        $this->actingAs($this->owner, 'sanctum')
+            ->patchJson("/api/app/sales/{$id}", $this->deliveryLines($product, 1))
+            ->assertOk();
+        $this->assertSame(9, $product->fresh()->quantity);
+    }
+
+    public function test_a_delivery_note_edit_cannot_take_more_than_is_in_stock_and_changes_nothing(): void
+    {
+        $product = Product::factory()->create(['company_id' => $this->company->id, 'quantity' => 5]);
+        $id = $this->issue('albaran', $product, 2)->json('data.id');
+        $this->assertSame(3, $product->fresh()->quantity);
+
+        // 2 held + 3 left = 5 at most
+        $this->actingAs($this->owner, 'sanctum')
+            ->patchJson("/api/app/sales/{$id}", $this->deliveryLines($product, 6))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('lines');
+
+        $this->assertSame(3, $product->fresh()->quantity);
+        $this->assertSame(2, SalesDocument::find($id)->lines()->first()->quantity);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->patchJson("/api/app/sales/{$id}", $this->deliveryLines($product, 5))
+            ->assertOk();
+        $this->assertSame(0, $product->fresh()->quantity);
+    }
+
+    public function test_a_paid_delivery_note_cannot_be_edited(): void
+    {
+        $product = Product::factory()->create(['company_id' => $this->company->id, 'quantity' => 10]);
+        $id = $this->issue('albaran', $product, 2)->json('data.id');
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->patchJson("/api/app/sales/{$id}/payment", ['payment_status' => 'paid', 'payment_method_id' => $this->cashId()])
+            ->assertOk();
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->getJson("/api/app/sales/{$id}")
+            ->assertJsonPath('data.can_edit', false);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->patchJson("/api/app/sales/{$id}", $this->deliveryLines($product, 4))
+            ->assertStatus(422);
+
+        $this->assertSame(8, $product->fresh()->quantity);
+        $this->assertSame(2, SalesDocument::find($id)->lines()->first()->quantity);
+    }
+
+    public function test_a_delivery_note_with_an_invoice_cannot_be_edited(): void
+    {
+        $product = Product::factory()->create(['company_id' => $this->company->id, 'quantity' => 10]);
+        $id = $this->issue('albaran', $product, 2)->json('data.id');
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson("/api/app/sales/{$id}/invoice", ['payment_status' => 'pending'])
+            ->assertSuccessful();
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->patchJson("/api/app/sales/{$id}", $this->deliveryLines($product, 4))
+            ->assertStatus(422);
+    }
+
+    public function test_editing_a_delivery_note_needs_its_own_permission(): void
+    {
+        $product = Product::factory()->create(['company_id' => $this->company->id, 'quantity' => 10]);
+        $id = $this->issue('albaran', $product, 2)->json('data.id');
+
+        $viewer = $this->member('cashier', ['delivery_notes.view', 'delivery_notes.create', 'delivery_notes.pay']);
+        $this->actingAs($viewer, 'sanctum')
+            ->patchJson("/api/app/sales/{$id}", $this->deliveryLines($product, 3))
+            ->assertForbidden();
+
+        $editor = $this->member('cashier', ['delivery_notes.view', 'delivery_notes.update'], 'editor@shop.test');
+        $this->actingAs($editor, 'sanctum')
+            ->patchJson("/api/app/sales/{$id}", $this->deliveryLines($product, 3))
+            ->assertOk();
+        $this->assertSame(7, $product->fresh()->quantity);
+    }
+
     public function test_an_invoice_cannot_be_edited(): void
     {
         $id = $this->issue('factura')->json('data.id');
@@ -444,7 +576,7 @@ class SalesDocumentTest extends TestCase
 
     public function test_converting_a_quote_to_an_invoice_takes_stock_and_hides_the_quote(): void
     {
-        $year = now()->year;
+        $month = now()->format('Ym');
         $product = Product::factory()->create(['company_id' => $this->company->id, 'quantity' => 8]);
         $id = $this->issue('quotation', $product, 2)->json('data.id');
 
@@ -452,7 +584,7 @@ class SalesDocumentTest extends TestCase
             ->postJson("/api/app/sales/{$id}/convert", ['type' => 'factura', 'payment_status' => 'pending'])
             ->assertCreated()
             ->assertJsonPath('data.type', 'factura')
-            ->assertJsonPath('data.number', "F-{$year}/0001")
+            ->assertJsonPath('data.number', "F-{$month}/00001")
             ->assertJsonPath('data.payment_status', 'pending');
 
         $this->assertSame(6, $product->fresh()->quantity);
@@ -747,12 +879,12 @@ class SalesDocumentTest extends TestCase
             ->assertJsonCount(1, 'data.items')
             ->assertJsonPath('data.items.0.client_company', 'Techo Sphere');
 
-        $year = now()->year;
+        $month = now()->format('Ym');
         $this->actingAs($this->owner, 'sanctum')
-            ->getJson("/api/app/sales?type=factura&search=F-{$year}/0001")
+            ->getJson("/api/app/sales?type=factura&search=F-{$month}/00001")
             ->assertOk()
             ->assertJsonCount(1, 'data.items')
-            ->assertJsonPath('data.items.0.number', "F-{$year}/0001");
+            ->assertJsonPath('data.items.0.number', "F-{$month}/00001");
 
         $this->actingAs($this->owner, 'sanctum')
             ->getJson('/api/app/sales?type=factura')
@@ -824,6 +956,115 @@ class SalesDocumentTest extends TestCase
     /**
      * @param  array<string, mixed>  $client
      */
+    private function issueOn(string $type, string $issuedAt)
+    {
+        return $this->actingAs($this->owner, 'sanctum')->postJson('/api/app/sales', array_merge($this->payload($type), ['issued_at' => $issuedAt]));
+    }
+
+    public function test_numbers_carry_the_month_and_a_five_digit_serial(): void
+    {
+        Carbon::setTestNow('2026-10-15 10:00:00');
+
+        $this->issueOn('factura', '2026-10-15T10:00:00+00:00')->assertCreated()->assertJsonPath('data.number', 'F-202610/00001');
+        $this->issueOn('factura', '2026-10-15T09:00:00+00:00')->assertCreated()->assertJsonPath('data.number', 'F-202610/00002');
+        $this->issueOn('albaran', '2026-10-15T09:00:00+00:00')->assertCreated()->assertJsonPath('data.number', 'AL-202610/00001');
+        $this->issueOn('proforma', '2026-10-15T09:00:00+00:00')->assertCreated()->assertJsonPath('data.number', 'PF-202610/00001');
+    }
+
+    public function test_the_serial_starts_again_in_a_new_month(): void
+    {
+        Carbon::setTestNow('2026-10-15 10:00:00');
+        $this->issueOn('factura', '2026-10-15T10:00:00+00:00')->assertCreated();
+        $this->issueOn('factura', '2026-10-16T10:00:00+00:00')->assertStatus(422);
+
+        Carbon::setTestNow('2026-11-02 09:00:00');
+        $this->issueOn('factura', '2026-11-02T09:00:00+00:00')->assertCreated()->assertJsonPath('data.number', 'F-202611/00001');
+    }
+
+    public function test_a_past_month_takes_its_last_day_and_continues_that_months_series(): void
+    {
+        Carbon::setTestNow('2026-10-15 10:00:00');
+
+        $this->issueOn('factura', '2026-09-30T12:00:00+00:00')->assertCreated()->assertJsonPath('data.number', 'F-202609/00001');
+        $this->issueOn('factura', '2026-09-30T18:00:00+00:00')->assertCreated()->assertJsonPath('data.number', 'F-202609/00002');
+        // and October carries on separately
+        $this->issueOn('factura', '2026-10-15T10:00:00+00:00')->assertCreated()->assertJsonPath('data.number', 'F-202610/00001');
+        $this->issueOn('factura', '2026-09-30T20:00:00+00:00')->assertCreated()->assertJsonPath('data.number', 'F-202609/00003');
+    }
+
+    public function test_a_past_month_refuses_any_day_but_its_last(): void
+    {
+        Carbon::setTestNow('2026-10-15 10:00:00');
+
+        $this->issueOn('factura', '2026-09-15T12:00:00+00:00')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('issued_at');
+        $this->issueOn('albaran', '2026-09-29T12:00:00+00:00')->assertStatus(422);
+        $this->issueOn('proforma', '2026-08-30T12:00:00+00:00')->assertStatus(422);
+    }
+
+    public function test_last_days_follow_the_length_of_the_month(): void
+    {
+        // 2028 is a leap year, 2027 is not.
+        Carbon::setTestNow('2028-03-10 10:00:00');
+        $this->assertNull(IssueDate::problem(Carbon::parse('2028-02-29T12:00:00+00:00')));
+        $this->assertNotNull(IssueDate::problem(Carbon::parse('2028-02-28T12:00:00+00:00')));
+
+        Carbon::setTestNow('2027-03-10 10:00:00');
+        $this->assertNull(IssueDate::problem(Carbon::parse('2027-02-28T12:00:00+00:00')));
+        $this->assertNull(IssueDate::problem(Carbon::parse('2027-01-31T12:00:00+00:00')));
+        $this->assertNotNull(IssueDate::problem(Carbon::parse('2027-04-30T12:00:00+00:00')));
+        $this->assertSame(202702, IssueDate::period(Carbon::parse('2027-02-28T12:00:00+00:00')));
+    }
+
+    public function test_the_future_is_refused(): void
+    {
+        Carbon::setTestNow('2026-10-15 10:00:00');
+
+        $this->issueOn('factura', '2026-10-16T10:00:00+00:00')->assertStatus(422)->assertJsonValidationErrors('issued_at');
+        $this->issueOn('factura', '2026-11-30T10:00:00+00:00')->assertStatus(422);
+    }
+
+    public function test_the_month_is_read_from_the_date_as_the_user_wrote_it(): void
+    {
+        Carbon::setTestNow('2026-10-31 20:00:00');
+
+        // 00:30 on 1 November in Karachi is still 31 October in UTC: the document belongs to November.
+        Carbon::setTestNow('2026-10-31 19:45:00');
+        $this->issueOn('factura', '2026-11-01T00:30:00+05:00')->assertCreated()->assertJsonPath('data.number', 'F-202611/00001');
+    }
+
+    public function test_a_quotation_may_keep_any_date(): void
+    {
+        Carbon::setTestNow('2026-10-15 10:00:00');
+
+        $this->issueOn('quotation', '2026-09-24T12:00:00+00:00')->assertCreated()->assertJsonPath('data.number', 'Q-202609/00001');
+    }
+
+    public function test_the_preview_follows_the_month_of_the_date(): void
+    {
+        Carbon::setTestNow('2026-10-15 10:00:00');
+        $this->issueOn('factura', '2026-09-30T12:00:00+00:00')->assertCreated();
+
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/app/sales/preview?type=factura')
+            ->assertOk()->assertJsonPath('data.number', 'F-202610/00001');
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/app/sales/preview?type=factura&issued_at=2026-09-30T12:00:00%2B00:00')
+            ->assertOk()->assertJsonPath('data.number', 'F-202609/00002');
+    }
+
+    public function test_a_document_made_from_another_gets_the_current_months_number(): void
+    {
+        Carbon::setTestNow('2026-10-15 10:00:00');
+        $this->issueOn('albaran', '2026-09-30T12:00:00+00:00')->assertCreated()->assertJsonPath('data.number', 'AL-202609/00001');
+
+        Carbon::setTestNow('2026-11-03 10:00:00');
+        $id = SalesDocument::query()->where('type', 'albaran')->value('id');
+        $this->actingAs($this->owner, 'sanctum')->postJson("/api/app/sales/{$id}/invoice", [
+            'payment_status' => 'pending',
+        ])->assertSuccessful();
+        $this->assertSame('F-202611/00001', SalesDocument::query()->where('type', 'factura')->value('number'));
+    }
+
     private function issue(string $type, ?Product $product = null, int $quantity = 1, array $client = [])
     {
         $product ??= Product::factory()->create(['company_id' => $this->company->id, 'quantity' => 10]);

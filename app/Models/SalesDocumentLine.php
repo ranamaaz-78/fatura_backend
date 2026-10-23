@@ -12,7 +12,6 @@ class SalesDocumentLine extends Model
         'sales_document_id',
         'product_id',
         'position',
-        'sr_number',
         'article',
         'description',
         'quantity',

@@ -16,7 +16,7 @@ use Illuminate\Validation\ValidationException;
 
 class SaleIssuer
 {
-    public function __construct(private readonly DocumentNumber $numbers) {}
+    public function __construct(private readonly DocumentNumber $numbers, private readonly SaleVoider $voider) {}
 
     public function issue(User $user, array $input): SalesDocument
     {
@@ -36,7 +36,8 @@ class SaleIssuer
                 'customer_id' => $customer?->id,
                 'created_by' => $user->id,
                 'type' => $input['type'],
-                'number' => $this->numbers->take($companyId, $input['type'], (int) $issuedAt->year),
+                // The month the document is dated in picks its series (F-202610/...); a back-dated one continues that month's.
+                'number' => $this->numbers->take($companyId, $input['type'], (int) ($input['number_period'] ?? $issuedAt->format('Ym'))),
                 'issued_at' => $issuedAt,
                 'from_settlement_id' => $input['from_settlement_id'] ?? null,
                 'from_document_id' => $input['from_document_id'] ?? null,
@@ -68,40 +69,53 @@ class SaleIssuer
         });
     }
 
-    public function updateQuote(User $user, SalesDocument $quote, array $input): SalesDocument
+    /**
+     * Changes a quotation (while it is open) or a delivery note (while it is unpaid): the client and the lines. The
+     * number never changes. A delivery note keeps its date and its payment, and its stock is put back before the new
+     * lines are taken out, so only the difference counts.
+     */
+    public function updateDocument(User $user, SalesDocument $sale, array $input): SalesDocument
     {
-        return DB::transaction(function () use ($user, $quote, $input) {
+        return DB::transaction(function () use ($user, $sale, $input) {
             /** @var SalesDocument $document */
             $document = SalesDocument::query()
-                ->whereKey($quote->id)
+                ->whereKey($sale->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
             if (! $document->canEdit()) {
-                throw ValidationException::withMessages([
-                    'type' => $document->isConverted()
-                        ? __('This quotation has already been converted.')
-                        : ($document->isExpired()
-                            ? __('This quotation expired on :date and can no longer be edited.', ['date' => Fmt::date($document->expires_at)])
-                            : __('Only a quotation can be edited.')),
-                ]);
+                throw ValidationException::withMessages(['type' => $this->cannotEditMessage($document)]);
             }
 
+            $type = $document->type;
             $companyId = (int) $user->company_id;
-            $lines = $this->pricedLines($companyId, $input['lines'], 'quotation');
-            [$lines, $discount] = $this->applyBillDiscount($lines, $input, 'quotation');
+
+            if ($type === 'albaran') {
+                $document->load('lines');
+                $this->voider->restock($document);
+            }
+
+            $lines = $this->pricedLines($companyId, $input['lines'], $type);
+            [$lines, $discount] = $this->applyBillDiscount($lines, $input, $type);
             $customer = $this->resolveCustomer($companyId, $input);
 
             $baseCents = (int) array_sum(array_column($lines, 'base_cents'));
             $taxCents = (int) array_sum(array_column($lines, 'tax_cents'));
-            [$recargoPercent, $recargoCents] = $this->resolveRecargo($companyId, $input, $baseCents, 'quotation');
+            [$recargoPercent, $recargoCents] = $this->resolveRecargo($companyId, $input, $baseCents, $type);
+
+            $dates = $type === 'quotation'
+                ? [
+                    'issued_at' => $input['issued_at'],
+                    // The week runs from the date written on the quotation, so moving that date moves the end too.
+                    'expires_at' => SalesDocument::expiryFor($input['issued_at']),
+                ]
+                // A delivery note keeps the date its number was issued on.
+                : [];
 
             $document->lines()->delete();
             $document->update([
+                ...$dates,
                 'customer_id' => $customer?->id,
-                'issued_at' => $input['issued_at'],
-                // The week runs from the date written on the quotation, so moving that date moves the end too.
-                'expires_at' => SalesDocument::expiryFor($input['issued_at']),
                 'client_code' => $customer?->code ?? (($input['client_code'] ?? '') !== '' ? $input['client_code'] : $document->client_code),
                 'client_name' => $input['client_name'],
                 'client_company' => ($input['client_company'] ?? '') !== '' ? $input['client_company'] : null,
@@ -109,7 +123,7 @@ class SaleIssuer
                 'client_nif' => ($input['client_nif'] ?? '') !== '' ? $input['client_nif'] : null,
                 'client_nie' => ($input['client_nie'] ?? '') !== '' ? $input['client_nie'] : $document->client_nie,
                 'client_address' => ($input['client_address'] ?? '') !== '' ? $input['client_address'] : null,
-                // The note the quotation was issued with stays as it is; only Printables sets notes.
+                // The note the document was issued with stays as it is; only Printables sets notes.
                 'base_cents' => $baseCents,
                 'tax_cents' => $taxCents,
                 'discount_type' => $discount['type'],
@@ -123,6 +137,27 @@ class SaleIssuer
 
             return $document->fresh(['lines', 'paymentMethod', 'convertedTo']);
         });
+    }
+
+    private function cannotEditMessage(SalesDocument $document): string
+    {
+        if ($document->type === 'albaran') {
+            if ($document->isVoided()) {
+                return __('This delivery note was voided and can no longer be edited.');
+            }
+
+            return $document->payment_status === 'pending'
+                ? __('This delivery note already has an invoice and can no longer be edited.')
+                : __('A delivery note can only be edited while it is unpaid.');
+        }
+
+        if ($document->type !== 'quotation') {
+            return __('Only a quotation or an unpaid delivery note can be edited.');
+        }
+
+        return $document->isConverted()
+            ? __('This quotation has already been converted.')
+            : __('This quotation expired on :date and can no longer be edited.', ['date' => Fmt::date($document->expires_at)]);
     }
 
     public function convert(User $user, SalesDocument $quote, array $input): SalesDocument
@@ -167,7 +202,6 @@ class SaleIssuer
                 'discount_value' => $document->discount_type === 'amount' ? (int) round($document->discount_value) : $document->discount_value,
                 'lines' => $document->lines->map(fn ($line) => [
                     'product_id' => $line->product_id,
-                    'sr_number' => $line->sr_number,
                     'article' => $line->article,
                     'description' => $line->description,
                     'quantity' => $line->quantity,
@@ -253,7 +287,6 @@ class SaleIssuer
             $priced[] = [
                 'product_id' => $row['product_id'] ?? null,
                 'position' => $index + 1,
-                'sr_number' => ($row['sr_number'] ?? '') !== '' ? $row['sr_number'] : null,
                 'article' => $row['article'],
                 'description' => ($row['description'] ?? '') !== '' ? $row['description'] : null,
                 'quantity' => (int) $row['quantity'],

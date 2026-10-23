@@ -103,14 +103,6 @@
                 </tr>
             </table>
 
-            {{-- Button --}}
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:26px;">
-                <tr><td align="center">
-                    <a href="{{ $loginUrl }}" style="display:inline-block;background-color:#004ac6;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:12px;">{{ __('Go to my account') }}</a>
-                </td></tr>
-                <tr><td align="center" style="padding-top:10px;font-size:12.5px;color:#64748b;">{{ __('Use the email you registered with.') }}</td></tr>
-            </table>
-
             {{-- Help --}}
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
                 <tr><td bgcolor="#f8f9ff" style="background-color:#f8f9ff;border-radius:14px;padding:14px 16px;font-size:13px;line-height:1.6;color:#475569;">

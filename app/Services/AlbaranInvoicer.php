@@ -62,7 +62,6 @@ class AlbaranInvoicer
                 $lines[] = [
                     // A product that has since been deleted still invoices: the line keeps its name and price.
                     'product_id' => $product?->id,
-                    'sr_number' => $line->sr_number,
                     'article' => $line->article,
                     'description' => $line->description,
                     'quantity' => (int) $line->quantity,

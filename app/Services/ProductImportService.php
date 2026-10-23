@@ -23,7 +23,6 @@ class ProductImportService
         $prepared = [];
         $errors = [];
         $seenBarcodes = [];
-        $seenSrNumbers = [];
         $allowedRates = TaxRate::withoutGlobalScopes()
             ->where('company_id', $companyId)
             ->pluck('rate')
@@ -64,18 +63,7 @@ class ProductImportService
                 $messages[] = __('Quantity and minimum stock must be whole numbers.');
             }
 
-            $srNumber = $this->text($row['sr_number'] ?? null);
             $barcode = $this->text($row['barcode'] ?? null);
-
-            if ($srNumber !== null) {
-                if (in_array($srNumber, $seenSrNumbers, true)) {
-                    $messages[] = __('This sr number is repeated in the file.');
-                } elseif ($this->existsForCompany($companyId, 'sr_number', $srNumber)) {
-                    $messages[] = __('This sr number already exists in your catalog.');
-                }
-
-                $seenSrNumbers[] = $srNumber;
-            }
 
             if ($barcode !== null) {
                 if (in_array($barcode, $seenBarcodes, true)) {
@@ -110,11 +98,10 @@ class ProductImportService
 
             $prepared[] = [
                 'company_id' => $companyId,
-                'sr_number' => $srNumber,
                 'article' => $article,
                 'description' => $this->text($row['description'] ?? null),
                 'brand' => $this->text($row['brand'] ?? null),
-                'image_code' => $this->text($row['image_code'] ?? null),
+                'short_code' => $this->text($row['short_code'] ?? null),
                 'barcode' => $barcode,
                 'barcode_generated' => $barcode === null,
                 'quantity' => $quantity,

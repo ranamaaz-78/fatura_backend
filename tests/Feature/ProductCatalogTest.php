@@ -292,6 +292,98 @@ class ProductCatalogTest extends TestCase
             ->assertJsonPath('data.counts.no_barcode', 1);
     }
 
+    public function test_labels_to_print_are_the_products_whose_barcode_the_system_made(): void
+    {
+        $pending = Product::factory()->generatedBarcode()->create(['company_id' => $this->company->id, 'article' => 'Pending one']);
+        $printed = Product::factory()->generatedBarcode()->create([
+            'company_id' => $this->company->id,
+            'article' => 'Printed one',
+            'label_print_count' => 2,
+            'label_last_printed_at' => now(),
+        ]);
+        // its own barcode: no label of ours to print
+        Product::factory()->create(['company_id' => $this->company->id, 'article' => 'Has its own barcode']);
+
+        $response = $this->actingAs($this->owner, 'sanctum')
+            ->getJson('/api/app/products?stock=labels')
+            ->assertOk()
+            ->assertJsonCount(2, 'data.items')
+            ->assertJsonPath('data.counts.no_barcode', 2)
+            ->assertJsonPath('data.counts.labels_pending', 1)
+            ->assertJsonPath('data.counts.labels_printed', 1);
+        $this->assertEqualsCanonicalizing(['Pending one', 'Printed one'], array_column($response->json('data.items'), 'article'));
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->getJson('/api/app/products?stock=labels_pending')
+            ->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.id', $pending->id)
+            ->assertJsonPath('data.items.0.label_printed', false)
+            ->assertJsonPath('data.items.0.label_print_count', 0);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->getJson('/api/app/products?stock=labels_printed')
+            ->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.id', $printed->id)
+            ->assertJsonPath('data.items.0.label_printed', true)
+            ->assertJsonPath('data.items.0.label_print_count', 2);
+    }
+
+    public function test_printing_labels_is_recorded_and_the_product_stays_in_the_list(): void
+    {
+        $one = Product::factory()->generatedBarcode()->create(['company_id' => $this->company->id]);
+        $two = Product::factory()->generatedBarcode()->create(['company_id' => $this->company->id]);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/products/labels/printed', ['items' => [['product_id' => $one->id, 'copies' => 8]]])
+            ->assertOk()
+            ->assertJsonPath('data.updated', 1);
+
+        $this->assertSame(1, $one->fresh()->label_print_count);
+        $this->assertNotNull($one->fresh()->label_last_printed_at);
+        $this->assertSame(0, $two->fresh()->label_print_count);
+
+        // pending shrinks, printed grows, nothing leaves the list
+        $this->actingAs($this->owner, 'sanctum')
+            ->getJson('/api/app/products?stock=labels')
+            ->assertOk()
+            ->assertJsonCount(2, 'data.items')
+            ->assertJsonPath('data.counts.labels_pending', 1)
+            ->assertJsonPath('data.counts.labels_printed', 1);
+
+        // printing it again counts again, and several at once work
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/products/labels/printed', ['items' => [['product_id' => $one->id], ['product_id' => $two->id]]])
+            ->assertOk()
+            ->assertJsonPath('data.updated', 2);
+
+        $this->assertSame(2, $one->fresh()->label_print_count);
+        $this->assertSame(1, $two->fresh()->label_print_count);
+    }
+
+    public function test_printing_labels_only_touches_the_own_companys_products(): void
+    {
+        $mine = Product::factory()->generatedBarcode()->create(['company_id' => $this->company->id]);
+        $other = Company::factory()->create();
+        $theirs = Product::factory()->generatedBarcode()->create(['company_id' => $other->id]);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/products/labels/printed', ['items' => [['product_id' => $mine->id], ['product_id' => $theirs->id]]])
+            ->assertOk()
+            ->assertJsonPath('data.updated', 1);
+
+        $this->assertSame(1, $mine->fresh()->label_print_count);
+        $this->assertSame(0, Product::withoutGlobalScopes()->find($theirs->id)->label_print_count);
+    }
+
+    public function test_recording_printed_labels_needs_a_list_of_products(): void
+    {
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/products/labels/printed', ['items' => []])
+            ->assertStatus(422);
+    }
+
     public function test_creating_a_product_can_attach_a_supplier_from_the_same_company(): void
     {
         $supplier = Supplier::factory()->create([

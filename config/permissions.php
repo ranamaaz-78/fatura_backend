@@ -5,16 +5,16 @@
  *
  * "modules" says which actions exist for each area; "presets" are the starting points the owner picks from
  * when adding a member (each can be ticked and unticked before saving, and is stored per member).
- * Only what can really be done is listed. A document cannot be edited once it is issued, so invoices, delivery
- * notes and proformas have no "update": they have "pay" (record or change a payment, return pieces) and, for the
- * first two, "void". Only a quotation can still be edited. Converting a document counts as "create" on the
- * document it becomes.
+ * Only what can really be done is listed. An invoice or a proforma cannot be edited once it is issued: they have
+ * "pay" (record or change a payment, return pieces) and, for the invoice, "void". A quotation can be edited while it
+ * is open, and a delivery note while it is still unpaid ("update"; once paid it can only be voided). Converting a
+ * document counts as "create" on the document it becomes.
  */
 
 $modules = [
     'dashboard' => ['view'],
     'invoices' => ['view', 'create', 'pay', 'void'],
-    'delivery_notes' => ['view', 'create', 'pay', 'void'],
+    'delivery_notes' => ['view', 'create', 'update', 'pay', 'void'],
     'quotes' => ['view', 'create', 'update'],
     'proformas' => ['view', 'create', 'pay'],
     'payments' => ['view'],

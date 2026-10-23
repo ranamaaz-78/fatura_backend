@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\SalesDocument;
 use App\Models\SalesDocumentSettlement;
+use App\Support\Permissions;
 use App\Support\ReportPeriod;
 use App\Traits\ApiResponse;
+use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -60,6 +62,63 @@ class ReportController extends Controller
         };
 
         return $this->success(['kind' => $kind, ...$data]);
+    }
+
+    /** Most documents one bulk download covers. */
+    private const DOCUMENT_LIMIT = 500;
+
+    /**
+     * The documents of one kind issued between two dates, for the bulk PDF download. The list is what the
+     * Invoices / Proformas / Delivery notes pages show, so the same per-kind view permission applies.
+     */
+    public function documents(Request $request): JsonResponse
+    {
+        $filters = $request->validate([
+            'type' => ['required', Rule::in(self::SALE_TYPES)],
+            'from' => ['required', 'date'],
+            'to' => ['required', 'date', 'after_or_equal:from'],
+            'include_voided' => ['nullable', 'boolean'],
+        ]);
+
+        if (! $request->user()->hasPermission(Permissions::forDocument($filters['type']).'.view')) {
+            abort(Permissions::denied());
+        }
+
+        // An invoice list also holds its credit notes.
+        $types = $filters['type'] === 'factura' ? ['factura', 'abono'] : [$filters['type']];
+
+        $query = SalesDocument::query()
+            ->whereIn('type', $types)
+            ->whereBetween('issued_at', [
+                Carbon::parse($filters['from'])->startOfDay(),
+                Carbon::parse($filters['to'])->endOfDay(),
+            ])
+            ->when(! $request->boolean('include_voided'), fn (Builder $q) => $q->whereNull('voided_at'));
+
+        $total = (clone $query)->count();
+
+        $items = $query
+            ->orderBy('issued_at')
+            ->orderBy('id')
+            ->limit(self::DOCUMENT_LIMIT)
+            ->get(['id', 'type', 'number', 'issued_at', 'client_name', 'total_cents', 'voided_at'])
+            ->map(fn (SalesDocument $document) => [
+                'id' => (int) $document->id,
+                'type' => (string) $document->type,
+                'number' => (string) $document->number,
+                'issued_at' => $document->issued_at?->toIso8601String(),
+                'client_name' => $document->client_name,
+                'total_cents' => (int) $document->total_cents,
+                'voided' => $document->voided_at !== null,
+            ])
+            ->all();
+
+        return $this->success([
+            'items' => $items,
+            'total' => $total,
+            'truncated' => $total > self::DOCUMENT_LIMIT,
+            'sum_cents' => (int) (clone $query)->reorder()->sum('total_cents'),
+        ]);
     }
 
     /**
@@ -325,7 +384,11 @@ class ReportController extends Controller
         $rank = ['out' => 0, 'low' => 1, 'ok' => 2];
 
         $rows = Product::query()
-            ->get(['id', 'article', 'quantity', 'minimum_stock', 'buying_price'])
+            ->with(['category:id,name', 'supplier:id,name'])
+            ->get([
+                'id', 'article', 'description', 'brand', 'short_code', 'barcode', 'category_id', 'supplier_id',
+                'quantity', 'minimum_stock', 'buying_price', 'selling_price', 'iva_percent',
+            ])
             ->map(function (Product $product) {
                 $quantity = (int) $product->quantity;
                 $minimum = (int) $product->minimum_stock;
@@ -334,9 +397,17 @@ class ReportController extends Controller
                 return [
                     'id' => (int) $product->id,
                     'article' => (string) $product->article,
+                    'description' => $product->description,
+                    'brand' => $product->brand,
+                    'short_code' => $product->short_code,
+                    'barcode' => $product->barcode,
+                    'category' => $product->category?->name,
+                    'supplier' => $product->supplier?->name,
                     'quantity' => $quantity,
                     'minimum_stock' => $minimum,
                     'buying_price_cents' => (int) $product->buying_price,
+                    'selling_price_cents' => (int) $product->selling_price,
+                    'iva_percent' => (float) $product->iva_percent,
                     'stock_value_cents' => $quantity * (int) $product->buying_price,
                     'band' => $band,
                 ];

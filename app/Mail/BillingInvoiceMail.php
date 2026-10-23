@@ -31,7 +31,6 @@ class BillingInvoiceMail extends Mailable
                 'invoice' => $this->invoice,
                 'issuer' => config('fatura.billing'),
                 'support' => config('fatura.support'),
-                'loginUrl' => rtrim((string) config('fatura.frontend_url'), '/').'/login',
             ],
         );
     }

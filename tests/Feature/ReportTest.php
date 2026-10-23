@@ -52,10 +52,10 @@ class ReportTest extends TestCase
     public function test_sales_respects_a_custom_date_range(): void
     {
         $this->issuePaid('factura', 'Today', ['issued_at' => now()->toIso8601String()]);
-        $this->issuePaid('factura', 'Last month', ['issued_at' => now()->subMonth()->toIso8601String()]);
+        $this->issuePaid('factura', 'Last month', ['issued_at' => now()->subMonthNoOverflow()->endOfMonth()->toIso8601String()]);
 
-        $from = now()->subMonth()->toDateString();
-        $to = now()->subMonth()->toDateString();
+        $from = now()->subMonthNoOverflow()->endOfMonth()->toDateString();
+        $to = $from;
 
         $this->actingAs($this->owner, 'sanctum')
             ->getJson("/api/app/reports/sales?period=custom&from={$from}&to={$to}")
@@ -238,6 +238,88 @@ class ReportTest extends TestCase
         $this->actingAs($this->owner, 'sanctum')
             ->getJson('/api/app/reports/purchases')
             ->assertNotFound();
+    }
+
+    public function test_documents_lists_one_kind_inside_the_dates(): void
+    {
+        $day = now()->toIso8601String();
+        $lastMonth = now()->subMonthNoOverflow()->endOfMonth();
+
+        $inside = $this->issuePaid('factura', 'In range', ['issued_at' => $day]);
+        $this->issuePaid('factura', 'Before', ['issued_at' => $lastMonth->toIso8601String()]);
+        $this->issuePaid('proforma', 'Other kind', ['issued_at' => $day]);
+        $voided = $this->issuePaid('factura', 'Voided', ['issued_at' => $day]);
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/sales/'.$voided.'/void', ['reason' => 'Client returned the order'])
+            ->assertOk();
+
+        $from = now()->startOfMonth()->toDateString();
+        $to = now()->endOfMonth()->toDateString();
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->getJson("/api/app/reports/documents?type=factura&from={$from}&to={$to}")
+            ->assertOk()
+            ->assertJsonPath('data.total', 1)
+            ->assertJsonPath('data.truncated', false)
+            ->assertJsonPath('data.sum_cents', 1210)
+            ->assertJsonPath('data.items.0.id', $inside)
+            ->assertJsonPath('data.items.0.client_name', 'In Range');
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->getJson("/api/app/reports/documents?type=factura&from={$from}&to={$to}&include_voided=1")
+            ->assertOk()
+            ->assertJsonPath('data.total', 2)
+            ->assertJsonPath('data.items.1.voided', true);
+    }
+
+    public function test_documents_needs_the_view_permission_of_that_kind(): void
+    {
+        $member = User::factory()->create([
+            'company_id' => $this->company->id,
+            'permissions' => ['reports.view', 'proformas.view'],
+        ]);
+
+        $this->actingAs($member, 'sanctum')
+            ->getJson('/api/app/reports/documents?type=factura&from='.now()->startOfMonth()->toDateString().'&to='.now()->endOfMonth()->toDateString())
+            ->assertForbidden();
+
+        $this->actingAs($member, 'sanctum')
+            ->getJson('/api/app/reports/documents?type=proforma&from='.now()->startOfMonth()->toDateString().'&to='.now()->endOfMonth()->toDateString())
+            ->assertOk();
+    }
+
+    public function test_documents_ignores_other_companies(): void
+    {
+        $this->issuePaid('factura', 'Mine', ['issued_at' => now()->toIso8601String()]);
+
+        $other = Company::factory()->create();
+        Subscription::factory()->create(['company_id' => $other->id]);
+        $stranger = User::factory()->businessAdmin()->create(['company_id' => $other->id]);
+
+        $this->actingAs($stranger, 'sanctum')
+            ->getJson('/api/app/reports/documents?type=factura&from='.now()->startOfMonth()->toDateString().'&to='.now()->endOfMonth()->toDateString())
+            ->assertOk()
+            ->assertJsonPath('data.total', 0);
+    }
+
+    public function test_stock_rows_carry_what_the_import_sheet_needs(): void
+    {
+        $supplier = Supplier::factory()->create(['company_id' => $this->company->id]);
+        Product::factory()->outOfStock()->create([
+            'company_id' => $this->company->id,
+            'supplier_id' => $supplier->id,
+            'short_code' => 'LMP-1',
+            'selling_price' => 1500,
+            'iva_percent' => 21,
+        ]);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->getJson('/api/app/reports/stock')
+            ->assertOk()
+            ->assertJsonPath('data.rows.0.short_code', 'LMP-1')
+            ->assertJsonPath('data.rows.0.supplier', $supplier->name)
+            ->assertJsonPath('data.rows.0.selling_price_cents', 1500)
+            ->assertJsonPath('data.rows.0.iva_percent', 21);
     }
 
     /**

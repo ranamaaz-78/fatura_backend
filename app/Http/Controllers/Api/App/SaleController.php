@@ -15,6 +15,7 @@ use App\Services\SaleReturner;
 use App\Services\SaleSettler;
 use App\Services\SaleVoider;
 use App\Services\SettlementInvoicer;
+use App\Support\IssueDate;
 use App\Support\Permissions;
 use App\Traits\ApiResponse;
 use Illuminate\Database\Eloquent\Builder;
@@ -120,16 +121,20 @@ class SaleController extends Controller
 
     public function preview(Request $request): JsonResponse
     {
-        $type = $request->validate([
+        $filters = $request->validate([
             'type' => ['required', Rule::in(SalesDocument::ISSUABLE)],
-        ])['type'];
+            // The number follows the month the document is dated in.
+            'issued_at' => ['nullable', 'date'],
+        ]);
+        $type = $filters['type'];
 
         $this->allow($request, $type, 'create');
 
         $companyId = (int) $request->user()->company_id;
+        $period = isset($filters['issued_at']) ? IssueDate::period(IssueDate::parse($filters['issued_at'])) : null;
 
         return $this->success([
-            'number' => $this->numbers->peek($companyId, $type),
+            'number' => $this->numbers->peek($companyId, $type, $period),
             'client_code' => $this->numbers->peek($companyId, 'client'),
         ]);
     }
@@ -139,7 +144,9 @@ class SaleController extends Controller
         $data = $request->validate($this->documentRules());
         $this->allow($request, $data['type'], 'create');
 
-        $data['issued_at'] = $request->date('issued_at');
+        $issued = IssueDate::parse($data['issued_at']);
+        $data['number_period'] = IssueDate::period($issued);
+        $data['issued_at'] = IssueDate::stored($issued);
         $data['save_customer'] = (bool) ($data['save_customer'] ?? false);
 
         $document = $this->issuer->issue($request->user(), $data);
@@ -165,10 +172,10 @@ class SaleController extends Controller
         $this->allow($request, $sale->type, 'update');
 
         $data = $request->validate($this->documentRules(forUpdate: true));
-        $data['issued_at'] = $request->date('issued_at');
+        $data['issued_at'] = IssueDate::stored(IssueDate::parse($data['issued_at']));
         $data['save_customer'] = (bool) ($data['save_customer'] ?? false);
 
-        $document = $this->issuer->updateQuote($request->user(), $sale, $data);
+        $document = $this->issuer->updateDocument($request->user(), $sale, $data);
 
         return $this->success(
             new SalesDocumentResource($document),
@@ -438,7 +445,20 @@ class SaleController extends Controller
     private function documentRules(bool $forUpdate = false): array
     {
         $rules = [
-            'issued_at' => ['required', 'date'],
+            // An invoice, delivery note or proforma may be dated today's month up to now, or an earlier month on its
+            // last day; never the future (its number carries the month). A quotation is no accounting document: it keeps
+            // any date, past or future, because its week runs from there. Only editing one is allowed to move it.
+            'issued_at' => ['required', 'date', function (string $attribute, mixed $value, \Closure $fail) use ($forUpdate) {
+                if ($forUpdate || request()->input('type') === 'quotation') {
+                    return;
+                }
+
+                $problem = IssueDate::problem(IssueDate::parse((string) $value));
+
+                if ($problem !== null) {
+                    $fail($problem);
+                }
+            }],
             'customer_id' => ['nullable', 'integer'],
             'save_customer' => ['nullable', 'boolean'],
             'client_code' => ['nullable', 'string', 'max:32'],
@@ -455,7 +475,6 @@ class SaleController extends Controller
             'recargo_rate_id' => ['nullable', 'integer'],
             'lines' => ['required', 'array', 'min:1', 'max:100'],
             'lines.*.product_id' => ['nullable', 'integer'],
-            'lines.*.sr_number' => ['nullable', 'string', 'max:64'],
             'lines.*.article' => ['required', 'string', 'max:180'],
             'lines.*.description' => ['nullable', 'string', 'max:2000'],
             'lines.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],

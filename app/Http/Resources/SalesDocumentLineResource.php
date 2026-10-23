@@ -16,7 +16,6 @@ class SalesDocumentLineResource extends JsonResource
             'id' => $this->id,
             'position' => $this->position,
             'product_id' => $this->product_id,
-            'sr_number' => $this->sr_number,
             'article' => $this->article,
             'description' => $this->description,
             'quantity' => $this->quantity,

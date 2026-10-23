@@ -77,6 +77,7 @@ Route::middleware(['auth:sanctum', 'role:super_admin'])->prefix('admin')->group(
     Route::patch('/companies/{company}/status', [Admin\CompanyController::class, 'updateStatus']);
     Route::post('/companies/{company}/subscriptions', [Admin\CompanyController::class, 'subscriptions']);
     Route::post('/companies/{company}/resend-access', [Admin\CompanyController::class, 'resendAccess']);
+    Route::post('/companies/{company}/products/import', Admin\CompanyProductImportController::class);
     Route::post('/subscriptions/{subscription}/cancel', [Admin\CompanyController::class, 'cancelSubscription']);
 });
 
@@ -86,6 +87,7 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
 
     Route::middleware(['subscription.active', 'company.setup'])->group(function () {
         Route::get('/dashboard', Tenant\DashboardController::class)->middleware('permission:dashboard.view');
+        Route::get('/reports/documents', [Tenant\ReportController::class, 'documents'])->middleware('permission:reports.view');
         Route::get('/reports/{kind}', [Tenant\ReportController::class, 'show'])->middleware('permission:reports.view');
 
         Route::get('/tax-rates', [Tenant\TaxRateController::class, 'index']);
@@ -147,6 +149,7 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
 
         Route::get('/products', [Tenant\ProductController::class, 'index'])->middleware('permission:products.view|stock.view|invoices.create|delivery_notes.create|quotes.create|proformas.create');
         Route::post('/products', [Tenant\ProductController::class, 'store'])->middleware('permission:products.create');
+        Route::post('/products/labels/printed', [Tenant\ProductController::class, 'labelsPrinted'])->middleware('permission:products.view');
         Route::post('/products/barcode', [Tenant\ProductController::class, 'generateBarcode'])->middleware('permission:products.create');
         Route::post('/products/import', Tenant\ProductImportController::class)->middleware('permission:products.create');
         Route::get('/products/{product}', [Tenant\ProductController::class, 'show'])->middleware('permission:products.view|stock.view|invoices.create|delivery_notes.create|quotes.create|proformas.create');

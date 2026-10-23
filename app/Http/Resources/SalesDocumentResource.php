@@ -65,6 +65,7 @@ class SalesDocumentResource extends JsonResource
             'from_settlement_id' => $this->from_settlement_id,
             'from_document_id' => $this->from_document_id,
             'can_invoice' => $this->canInvoice(),
+            'can_edit' => $this->canEdit(),
             'from_proforma' => $this->whenLoaded(
                 'fromSettlement',
                 fn () => $this->fromSettlement?->document === null

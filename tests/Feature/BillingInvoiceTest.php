@@ -150,4 +150,25 @@ class BillingInvoiceTest extends TestCase
         $this->assertSame('Inicial', $invoice->data['plan']['name']);
         Mail::assertSent(BillingInvoiceMail::class, fn (BillingInvoiceMail $mail) => $mail->hasTo('marta@devpremises.test'));
     }
+
+    public function test_the_invoice_email_has_no_button_and_no_sign_in_or_set_password_link(): void
+    {
+        Mail::fake();
+        $company = $this->company('en');
+        [$subscription, $payment] = $this->term($company);
+        $company->owner->forceFill(['password' => null])->save();
+
+        app(BillingInvoiceService::class)->issueAndSend($subscription, $payment, 3, BillingInvoice::KIND_NEW);
+
+        Mail::assertSent(BillingInvoiceMail::class, function (BillingInvoiceMail $mail) {
+            $html = $mail->render();
+
+            // The set-password and sign-in links come in their own emails; the invoice only tells and attaches.
+            return ! str_contains($html, '/set-password')
+                && ! str_contains($html, '/login')
+                && ! str_contains($html, 'Set your password')
+                && ! str_contains($html, 'Log in to my account')
+                && str_contains($html, $mail->invoice->number.'.pdf');
+        });
+    }
 }
