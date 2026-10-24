@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Api\App as Tenant;
 use App\Http\Controllers\Api\Auth;
 use App\Http\Controllers\Api\PublicSite\ApplicationController as PublicApplicationController;
+use App\Http\Controllers\Api\PublicSite\DesktopAppController as PublicDesktopAppController;
 use App\Http\Controllers\Api\PublicSite\PlanController as PublicPlanController;
 use App\Http\Controllers\Api\PublicSite\InvoiceVerificationController;
 use App\Http\Controllers\Api\PublicSite\SiteContentController as PublicSiteContentController;
@@ -20,6 +21,11 @@ Route::get('/health', function () {
 Route::prefix('public')->group(function () {
     Route::get('/plans', [PublicPlanController::class, 'index']);
     Route::get('/site-content', [PublicSiteContentController::class, 'show']);
+    Route::get('/desktop-app', [PublicDesktopAppController::class, 'show']);
+    Route::get('/desktop-app/download', [PublicDesktopAppController::class, 'download'])->middleware('throttle:20,1');
+    // The installed Windows app updates itself from here (electron-updater's "generic" feed).
+    Route::get('/desktop-app/updates/latest.yml', [PublicDesktopAppController::class, 'manifest'])->middleware('throttle:60,1');
+    Route::get('/desktop-app/updates/{file}', [PublicDesktopAppController::class, 'updateFile'])->middleware('throttle:20,1');
     Route::get('/invoices/verify/{code}', [InvoiceVerificationController::class, 'show'])->middleware('throttle:30,1');
     Route::get('/invoices/verify/{code}/document', [InvoiceVerificationController::class, 'document'])->middleware('throttle:30,1');
     Route::post('/applications/otp', [PublicApplicationController::class, 'requestOtp'])->middleware('throttle:6,1');
@@ -69,6 +75,12 @@ Route::middleware(['auth:sanctum', 'role:super_admin'])->prefix('admin')->group(
     Route::patch('/site-content/faqs/{faq}', [Admin\SiteContentController::class, 'updateFaq']);
     Route::delete('/site-content/faqs/{faq}', [Admin\SiteContentController::class, 'destroyFaq']);
     Route::put('/site-content/pages/{slug}', [Admin\SiteContentController::class, 'updatePage']);
+
+    Route::get('/desktop-app', [Admin\DesktopAppController::class, 'show']);
+    Route::post('/desktop-app/uploads', [Admin\DesktopAppController::class, 'start']);
+    Route::post('/desktop-app/uploads/{upload}/chunks', [Admin\DesktopAppController::class, 'chunk'])->whereUuid('upload');
+    Route::post('/desktop-app/uploads/{upload}/complete', [Admin\DesktopAppController::class, 'complete'])->whereUuid('upload');
+    Route::delete('/desktop-app', [Admin\DesktopAppController::class, 'destroy']);
 
     Route::patch('/password', [Tenant\PasswordController::class, 'update']);
     Route::patch('/me/locale', [Admin\LocaleController::class, 'update']);
