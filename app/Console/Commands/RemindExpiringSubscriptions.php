@@ -29,7 +29,7 @@ class RemindExpiringSubscriptions extends Command
         foreach ((array) config('fatura.subscriptions.reminder_days') as $days) {
             $window = [now()->addDays($days)->startOfDay(), now()->addDays($days)->endOfDay()];
 
-            $subscriptions = Subscription::withoutGlobalScopes()
+            $subscriptions = Subscription::withoutGlobalScopes()->real()
                 ->with('company.owner')
                 ->where('status', SubscriptionStatus::Active)
                 ->whereBetween('ends_at', $window)

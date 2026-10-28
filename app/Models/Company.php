@@ -38,8 +38,10 @@ class Company extends Model
         'locale',
         'document_locale',
         'role_presets',
+        'document_series',
         'logo_path',
         'status',
+        'is_demo',
         'notes',
     ];
 
@@ -48,11 +50,19 @@ class Company extends Model
         return [
             'status' => CompanyStatus::class,
             'role_presets' => 'array',
+            'document_series' => 'array',
+            'is_demo' => 'boolean',
         ];
     }
 
     /** What a business must give before it can issue documents. The logo is optional: documents show the initials without one. */
     public const PROFILE_FIELDS = ['name', 'email', 'tax_id', 'phone', 'whatsapp', 'address', 'city', 'postal_code', 'country', 'currency'];
+
+    /** The real customers: everything except the shared demo account. The admin numbers and reminders use it. */
+    public function scopeReal(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        return $query->where('is_demo', false);
+    }
 
     /** @return list<string> the profile fields still empty */
     public function missingProfileFields(): array

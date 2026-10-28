@@ -3,7 +3,9 @@
 use App\Http\Middleware\EnsureActiveSubscription;
 use App\Http\Middleware\EnsureCompanySetup;
 use App\Http\Middleware\EnsurePermission;
+use App\Http\Middleware\DemoCap;
 use App\Http\Middleware\EnsureRole;
+use App\Http\Middleware\NotInDemo;
 use App\Http\Middleware\SetLocale;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
@@ -29,6 +31,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => EnsurePermission::class,
             'subscription.active' => EnsureActiveSubscription::class,
             'company.setup' => EnsureCompanySetup::class,
+            'not.demo' => NotInDemo::class,
+            'demo.cap' => DemoCap::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

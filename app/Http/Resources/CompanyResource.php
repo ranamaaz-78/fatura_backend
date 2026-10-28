@@ -29,6 +29,7 @@ class CompanyResource extends JsonResource
             'profile_complete' => $this->isProfileComplete(),
             'missing_fields' => $this->missingProfileFields(),
             'status' => $this->status->value,
+            'is_demo' => (bool) $this->is_demo,
             'notes' => $this->notes,
             'created_at' => $this->created_at?->toIso8601String(),
             'users_count' => $this->whenCounted('users'),

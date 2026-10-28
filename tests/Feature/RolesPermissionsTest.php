@@ -354,13 +354,15 @@ class RolesPermissionsTest extends TestCase
         $this->assertNotContains('delete', $modules['quotes']);
         $this->assertNotContains('void', $modules['proformas']);
         // Pages that only show things have nothing to tick but "view".
-        foreach (['dashboard', 'payments', 'stock', 'reports'] as $area) {
+        foreach (['dashboard', 'payments', 'reports'] as $area) {
             $this->assertSame(['view'], $modules[$area], $area);
         }
+        // Stock also takes purchases in (create) and takes them back out (void).
+        $this->assertSame(['view', 'create', 'void'], $modules['stock']);
 
         $this->assertEqualsCanonicalizing(
             ['invoices.view', 'invoices.pay', 'invoices.void', 'delivery_notes.pay', 'proformas.pay'],
-            Permissions::migrateLegacy(['invoices.view', 'invoices.update', 'invoices.delete', 'delivery_notes.update', 'proformas.update', 'quotes.delete', 'stock.create']),
+            Permissions::migrateLegacy(['invoices.view', 'invoices.update', 'invoices.delete', 'delivery_notes.update', 'proformas.update', 'quotes.delete', 'stock.delete']),
         );
         $this->assertEqualsCanonicalizing(['invoices.pay', 'delivery_notes.pay', 'proformas.pay'], Permissions::migrateLegacy(['payments.update']));
     }

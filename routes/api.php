@@ -84,6 +84,9 @@ Route::middleware(['auth:sanctum', 'role:super_admin'])->prefix('admin')->group(
 
     Route::patch('/password', [Tenant\PasswordController::class, 'update']);
     Route::patch('/me/locale', [Admin\LocaleController::class, 'update']);
+    Route::get('/demo', [Admin\DemoController::class, 'show']);
+    Route::patch('/demo', [Admin\DemoController::class, 'toggle']);
+    Route::post('/demo/reset', [Admin\DemoController::class, 'reset']);
     Route::get('/companies', [Admin\CompanyController::class, 'index']);
     Route::get('/companies/{company}', [Admin\CompanyController::class, 'show']);
     Route::patch('/companies/{company}/status', [Admin\CompanyController::class, 'updateStatus']);
@@ -95,12 +98,18 @@ Route::middleware(['auth:sanctum', 'role:super_admin'])->prefix('admin')->group(
 
 Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')->group(function () {
     Route::get('/me', Auth\MeController::class);
-    Route::get('/subscription', Tenant\SubscriptionController::class)->middleware('role:business_admin');
+    // Customers practice in the shared demo account: in with their own login, out again when they are done.
+    Route::post('/demo/enter', [Tenant\DemoController::class, 'enter'])->middleware('throttle:10,1');
+    Route::post('/demo/exit', [Tenant\DemoController::class, 'exit']);
+    Route::get('/subscription', Tenant\SubscriptionController::class)->middleware('role:business_admin')->middleware('not.demo');
 
     Route::middleware(['subscription.active', 'company.setup'])->group(function () {
         Route::get('/dashboard', Tenant\DashboardController::class)->middleware('permission:dashboard.view');
         Route::get('/reports/documents', [Tenant\ReportController::class, 'documents'])->middleware('permission:reports.view');
         Route::get('/reports/{kind}', [Tenant\ReportController::class, 'show'])->middleware('permission:reports.view');
+
+        Route::get('/document-series', [Tenant\DocumentSeriesController::class, 'show'])->middleware('permission:settings.view');
+        Route::put('/document-series', [Tenant\DocumentSeriesController::class, 'update'])->middleware('permission:settings.update');
 
         Route::get('/tax-rates', [Tenant\TaxRateController::class, 'index']);
         Route::post('/tax-rates', [Tenant\TaxRateController::class, 'store'])->middleware('permission:settings.update');
@@ -126,20 +135,24 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::delete('/payment-methods/{companyPaymentMethod}', [Tenant\CompanyPaymentMethodController::class, 'destroy'])->middleware('permission:settings.update');
 
         Route::get('/customers', [Tenant\CustomerController::class, 'index'])->middleware('permission:customers.view|invoices.create|delivery_notes.create|quotes.create|proformas.create');
-        Route::post('/customers', [Tenant\CustomerController::class, 'store'])->middleware('permission:customers.create');
+        Route::post('/customers', [Tenant\CustomerController::class, 'store'])->middleware('permission:customers.create')->middleware('demo.cap:customers,80');
         Route::patch('/customers/{customer}/active', [Tenant\CustomerController::class, 'updateActive'])->middleware('permission:customers.update');
         Route::patch('/customers/{customer}', [Tenant\CustomerController::class, 'update'])->middleware('permission:customers.update');
         Route::delete('/customers/{customer}', [Tenant\CustomerController::class, 'destroy'])->middleware('permission:customers.delete');
 
+        Route::get('/purchases', [Tenant\PurchaseController::class, 'index'])->middleware('permission:stock.view');
+        Route::post('/purchases', [Tenant\PurchaseController::class, 'store'])->middleware('permission:stock.create')->middleware('demo.cap:purchases,80');
+        Route::get('/purchases/{purchase}', [Tenant\PurchaseController::class, 'show'])->middleware('permission:stock.view');
+        Route::post('/purchases/{purchase}/void', [Tenant\PurchaseController::class, 'void'])->middleware('permission:stock.void');
         Route::get('/suppliers', [Tenant\SupplierController::class, 'index'])->middleware('permission:suppliers.view|stock.view');
-        Route::post('/suppliers', [Tenant\SupplierController::class, 'store'])->middleware('permission:suppliers.create');
+        Route::post('/suppliers', [Tenant\SupplierController::class, 'store'])->middleware('permission:suppliers.create')->middleware('demo.cap:suppliers,40');
         Route::patch('/suppliers/{supplier}/active', [Tenant\SupplierController::class, 'updateActive'])->middleware('permission:suppliers.update');
         Route::patch('/suppliers/{supplier}', [Tenant\SupplierController::class, 'update'])->middleware('permission:suppliers.update');
         Route::delete('/suppliers/{supplier}', [Tenant\SupplierController::class, 'destroy'])->middleware('permission:suppliers.delete');
 
         Route::get('/sales/preview', [Tenant\SaleController::class, 'preview']);
         Route::get('/sales', [Tenant\SaleController::class, 'index']);
-        Route::post('/sales', [Tenant\SaleController::class, 'store']);
+        Route::post('/sales', [Tenant\SaleController::class, 'store'])->middleware('demo.cap:documents,400');
         Route::get('/sales/{sale}', [Tenant\SaleController::class, 'show']);
         Route::patch('/sales/{sale}', [Tenant\SaleController::class, 'update']);
         Route::post('/sales/{sale}/convert', [Tenant\SaleController::class, 'convert']);
@@ -153,17 +166,17 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::post('/sales/{sale}/void', [Tenant\SaleController::class, 'void']);
 
         Route::get('/product-images', [Tenant\ProductImageController::class, 'index'])->middleware('permission:product_images.view|products.view|invoices.create|delivery_notes.create|quotes.create|proformas.create');
-        Route::post('/product-images', [Tenant\ProductImageController::class, 'store'])->middleware('permission:product_images.create');
+        Route::post('/product-images', [Tenant\ProductImageController::class, 'store'])->middleware('permission:product_images.create')->middleware('not.demo');
         Route::get('/product-images/{productImage}/file', [Tenant\ProductImageController::class, 'file'])->middleware('permission:product_images.view|products.view|invoices.create|delivery_notes.create|quotes.create|proformas.create');
-        Route::post('/product-images/{productImage}/replace', [Tenant\ProductImageController::class, 'replace'])->middleware('permission:product_images.update');
+        Route::post('/product-images/{productImage}/replace', [Tenant\ProductImageController::class, 'replace'])->middleware('permission:product_images.update')->middleware('not.demo');
         Route::patch('/product-images/{productImage}', [Tenant\ProductImageController::class, 'update'])->middleware('permission:product_images.update');
         Route::delete('/product-images/{productImage}', [Tenant\ProductImageController::class, 'destroy'])->middleware('permission:product_images.delete');
 
         Route::get('/products', [Tenant\ProductController::class, 'index'])->middleware('permission:products.view|stock.view|invoices.create|delivery_notes.create|quotes.create|proformas.create');
-        Route::post('/products', [Tenant\ProductController::class, 'store'])->middleware('permission:products.create');
+        Route::post('/products', [Tenant\ProductController::class, 'store'])->middleware('permission:products.create')->middleware('demo.cap:products,150');
         Route::post('/products/labels/printed', [Tenant\ProductController::class, 'labelsPrinted'])->middleware('permission:products.view');
         Route::post('/products/barcode', [Tenant\ProductController::class, 'generateBarcode'])->middleware('permission:products.create');
-        Route::post('/products/import', Tenant\ProductImportController::class)->middleware('permission:products.create');
+        Route::post('/products/import', Tenant\ProductImportController::class)->middleware('permission:products.create')->middleware('not.demo');
         Route::get('/products/{product}', [Tenant\ProductController::class, 'show'])->middleware('permission:products.view|stock.view|invoices.create|delivery_notes.create|quotes.create|proformas.create');
         Route::patch('/products/{product}', [Tenant\ProductController::class, 'update'])->middleware('permission:products.update');
         Route::delete('/products/{product}', [Tenant\ProductController::class, 'destroy'])->middleware('permission:products.delete');
@@ -179,27 +192,27 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
             ->middleware('permission:printables.update')
             ->whereIn('type', ['factura', 'albaran', 'quotation', 'proforma']);
 
-        Route::patch('/company/locale', [Tenant\CompanySettingsController::class, 'updateLocale'])->middleware('role:business_admin');
-        Route::patch('/company/document-locale', [Tenant\CompanySettingsController::class, 'updateDocumentLocale'])->middleware('role:business_admin');
+        Route::patch('/company/locale', [Tenant\CompanySettingsController::class, 'updateLocale'])->middleware('role:business_admin')->middleware('not.demo');
+        Route::patch('/company/document-locale', [Tenant\CompanySettingsController::class, 'updateDocumentLocale'])->middleware('role:business_admin')->middleware('not.demo');
         Route::get('/company', [Tenant\CompanySettingsController::class, 'show']);
-        Route::patch('/company', [Tenant\CompanySettingsController::class, 'update'])->middleware('permission:settings.update');
-        Route::patch('/password', [Tenant\PasswordController::class, 'update']);
+        Route::patch('/company', [Tenant\CompanySettingsController::class, 'update'])->middleware('permission:settings.update')->middleware('not.demo');
+        Route::patch('/password', [Tenant\PasswordController::class, 'update'])->middleware('not.demo');
 
         Route::get('/company/logo', [Tenant\CompanyLogoController::class, 'file']);
-        Route::post('/company/logo', [Tenant\CompanyLogoController::class, 'store'])->middleware('permission:settings.update');
-        Route::delete('/company/logo', [Tenant\CompanyLogoController::class, 'destroy'])->middleware('permission:settings.update');
+        Route::post('/company/logo', [Tenant\CompanyLogoController::class, 'store'])->middleware('permission:settings.update')->middleware('not.demo');
+        Route::delete('/company/logo', [Tenant\CompanyLogoController::class, 'destroy'])->middleware('permission:settings.update')->middleware('not.demo');
 
-        Route::get('/team', [Tenant\TeamController::class, 'index']);
-        Route::post('/team', [Tenant\TeamController::class, 'store']);
-        Route::put('/team/roles/{role}', [Tenant\TeamController::class, 'saveRole']);
-        Route::delete('/team/roles/{role}', [Tenant\TeamController::class, 'resetRole']);
-        Route::patch('/team/{user}', [Tenant\TeamController::class, 'update']);
-        Route::patch('/team/{user}/status', [Tenant\TeamController::class, 'updateStatus']);
-        Route::post('/team/{user}/password', [Tenant\TeamController::class, 'resetPassword']);
-        Route::delete('/team/{user}', [Tenant\TeamController::class, 'destroy']);
+        Route::get('/team', [Tenant\TeamController::class, 'index'])->middleware('not.demo');
+        Route::post('/team', [Tenant\TeamController::class, 'store'])->middleware('not.demo');
+        Route::put('/team/roles/{role}', [Tenant\TeamController::class, 'saveRole'])->middleware('not.demo');
+        Route::delete('/team/roles/{role}', [Tenant\TeamController::class, 'resetRole'])->middleware('not.demo');
+        Route::patch('/team/{user}', [Tenant\TeamController::class, 'update'])->middleware('not.demo');
+        Route::patch('/team/{user}/status', [Tenant\TeamController::class, 'updateStatus'])->middleware('not.demo');
+        Route::post('/team/{user}/password', [Tenant\TeamController::class, 'resetPassword'])->middleware('not.demo');
+        Route::delete('/team/{user}', [Tenant\TeamController::class, 'destroy'])->middleware('not.demo');
 
         Route::get('/whatsapp/settings', [Tenant\WhatsAppController::class, 'settings']);
-        Route::patch('/whatsapp/settings', [Tenant\WhatsAppController::class, 'updateSettings'])->middleware('permission:settings.update');
+        Route::patch('/whatsapp/settings', [Tenant\WhatsAppController::class, 'updateSettings'])->middleware('permission:settings.update')->middleware('not.demo');
     });
 });
 

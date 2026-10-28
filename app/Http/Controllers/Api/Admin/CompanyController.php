@@ -33,7 +33,7 @@ class CompanyController extends Controller
             'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
         ]);
 
-        $companies = Company::query()
+        $companies = Company::real()
             ->with(['owner', 'activeSubscription', 'latestSubscription'])
             ->withCount('users')
             ->when($filters['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
@@ -183,12 +183,12 @@ class CompanyController extends Controller
     private function counts(): array
     {
         return [
-            'all' => Company::count(),
-            'active' => $this->inSubscriptionState(Company::query(), 'active')->count(),
-            'expiring' => $this->inSubscriptionState(Company::query(), 'expiring')->count(),
-            'expired' => $this->inSubscriptionState(Company::query(), 'expired')->count(),
-            'none' => $this->inSubscriptionState(Company::query(), 'none')->count(),
-            'suspended' => Company::where('status', CompanyStatus::Suspended->value)->count(),
+            'all' => Company::real()->count(),
+            'active' => $this->inSubscriptionState(Company::real(), 'active')->count(),
+            'expiring' => $this->inSubscriptionState(Company::real(), 'expiring')->count(),
+            'expired' => $this->inSubscriptionState(Company::real(), 'expired')->count(),
+            'none' => $this->inSubscriptionState(Company::real(), 'none')->count(),
+            'suspended' => Company::real()->where('status', CompanyStatus::Suspended->value)->count(),
         ];
     }
 }

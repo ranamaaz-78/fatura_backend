@@ -33,20 +33,20 @@ class DashboardController extends Controller
                 'this_week' => Application::where('created_at', '>=', now()->subWeek())->count(),
             ],
             'companies' => [
-                'total' => Company::count(),
-                'active' => Company::where('status', CompanyStatus::Active)->count(),
-                'suspended' => Company::where('status', CompanyStatus::Suspended)->count(),
+                'total' => Company::real()->count(),
+                'active' => Company::real()->where('status', CompanyStatus::Active)->count(),
+                'suspended' => Company::real()->where('status', CompanyStatus::Suspended)->count(),
             ],
             'subscriptions' => [
-                'active' => Subscription::withoutGlobalScopes()
+                'active' => Subscription::withoutGlobalScopes()->real()
                     ->where('status', SubscriptionStatus::Active)
                     ->where('ends_at', '>', now())
                     ->count(),
-                'expiring_soon' => Subscription::withoutGlobalScopes()
+                'expiring_soon' => Subscription::withoutGlobalScopes()->real()
                     ->where('status', SubscriptionStatus::Active)
                     ->whereBetween('ends_at', [now(), now()->addDays(7)])
                     ->count(),
-                'expired' => Subscription::withoutGlobalScopes()
+                'expired' => Subscription::withoutGlobalScopes()->real()
                     ->where(function ($query) use ($graceDays) {
                         $query->where('status', SubscriptionStatus::Expired)
                             ->orWhere('ends_at', '<=', now()->subDays($graceDays));
@@ -135,7 +135,7 @@ class DashboardController extends Controller
             'days_left' => $subscription->daysLeft(),
         ];
 
-        $expiring = Subscription::withoutGlobalScopes()->with('company')
+        $expiring = Subscription::withoutGlobalScopes()->real()->with('company')
             ->where('status', SubscriptionStatus::Active)
             ->whereBetween('ends_at', [now(), now()->addDays(7)])
             ->orderBy('ends_at')
@@ -146,8 +146,8 @@ class DashboardController extends Controller
             ->values();
 
         // Latest term per company that is no longer running.
-        $expired = Subscription::withoutGlobalScopes()->with('company')
-            ->whereIn('id', Subscription::withoutGlobalScopes()->selectRaw('MAX(id)')->groupBy('company_id'))
+        $expired = Subscription::withoutGlobalScopes()->real()->with('company')
+            ->whereIn('id', Subscription::withoutGlobalScopes()->real()->selectRaw('MAX(id)')->groupBy('company_id'))
             ->where(fn ($query) => $query->where('status', SubscriptionStatus::Expired)
                 ->orWhere(fn ($inner) => $inner->where('status', SubscriptionStatus::Active)
                     ->where('ends_at', '<=', now()->subDays($graceDays))))
@@ -164,7 +164,7 @@ class DashboardController extends Controller
     /** How many running subscriptions sit on each plan. */
     private function planMix(): array
     {
-        return Subscription::withoutGlobalScopes()
+        return Subscription::withoutGlobalScopes()->real()
             ->where('status', SubscriptionStatus::Active)
             ->where('ends_at', '>', now())
             ->get(['plan_name', 'plan_price'])

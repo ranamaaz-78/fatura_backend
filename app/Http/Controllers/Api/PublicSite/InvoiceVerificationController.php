@@ -54,6 +54,8 @@ class InvoiceVerificationController extends Controller
                 'tax_id' => $company?->tax_id,
                 'city' => $company?->city,
                 'country' => $company?->country,
+                // A demo invoice is practice, never a real one: the page says so.
+                'is_demo' => (bool) $company?->is_demo,
             ],
         ]);
     }
@@ -88,6 +90,7 @@ class InvoiceVerificationController extends Controller
                 'postal_code' => $company->postal_code,
                 'country' => $company->country,
                 'currency' => $company->currency,
+                'is_demo' => (bool) $company->is_demo,
             ],
             'template' => $template !== null
                 ? (new PrintTemplateResource($template))->resolve()

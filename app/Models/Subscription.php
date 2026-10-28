@@ -44,6 +44,12 @@ class Subscription extends Model
         ];
     }
 
+    /** Only the subscriptions of real customers: the demo's never counts as revenue or runs out. */
+    public function scopeReal(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        return $query->whereNotIn('company_id', Company::query()->where('is_demo', true)->select('id'));
+    }
+
     public function plan(): BelongsTo
     {
         return $this->belongsTo(Plan::class);

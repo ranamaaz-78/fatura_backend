@@ -17,7 +17,7 @@ class ExpireSubscriptions extends Command
         $graceDays = (int) config('fatura.subscriptions.grace_days');
         $cutoff = now()->subDays($graceDays);
 
-        $count = Subscription::withoutGlobalScopes()
+        $count = Subscription::withoutGlobalScopes()->real()
             ->where('status', SubscriptionStatus::Active)
             ->where('ends_at', '<=', $cutoff)
             ->update(['status' => SubscriptionStatus::Expired, 'updated_at' => now()]);
