@@ -21,6 +21,8 @@ class DemoResetter
      */
     public const TABLES = [
         'sales_documents',
+        'supplier_bill_payments',
+        'supplier_bills',
         'purchases',
         'product_images',
         'products',

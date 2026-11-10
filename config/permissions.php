@@ -23,6 +23,8 @@ $modules = [
     'products' => ['view', 'create', 'update', 'delete'],
     'product_images' => ['view', 'create', 'update', 'delete'],
     'stock' => ['view', 'create', 'void'],
+    // The supplier ledger: a record book of what was bought from suppliers and paid for, apart from Purchases and stock.
+    'ledger' => ['view', 'create', 'pay', 'void'],
     'reports' => ['view'],
     'printables' => ['view', 'update'],
     'settings' => ['view', 'update'],
@@ -62,7 +64,7 @@ return [
             'quotes.view',
             'proformas.view', 'proformas.pay',
             'payments.view',
-            'customers.view', 'suppliers.view', 'products.view', 'stock.view',
+            'customers.view', 'suppliers.view', 'products.view', 'stock.view', 'ledger.view',
             'reports.view',
             'printables.view',
         ],

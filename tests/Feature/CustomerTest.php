@@ -153,4 +153,22 @@ class CustomerTest extends TestCase
             ->patchJson("/api/app/customers/{$id}/active", ['is_active' => true])
             ->assertNotFound();
     }
+
+    public function test_a_client_keeps_a_private_remark_exactly_as_typed(): void
+    {
+        $this->actingAs($this->owner, 'sanctum');
+
+        $id = $this->postJson('/api/app/customers', ['name' => 'Ana Ruiz', 'remarks' => "Pays on the 5th.
+Prefers cash, never card."])
+            ->assertCreated()
+            ->assertJsonPath('data.remarks', "Pays on the 5th.
+Prefers cash, never card.")
+            ->json('data.id');
+
+        // Edited, found by a word in it, and cleared again.
+        $this->patchJson("/api/app/customers/{$id}", ['name' => 'Ana Ruiz', 'remarks' => 'Likes the blue ones'])->assertOk()->assertJsonPath('data.remarks', 'Likes the blue ones');
+        $this->getJson('/api/app/customers?search=blue')->assertJsonCount(1, 'data');
+        $this->patchJson("/api/app/customers/{$id}", ['name' => 'Ana Ruiz', 'remarks' => ''])->assertOk()->assertJsonPath('data.remarks', null);
+        $this->patchJson("/api/app/customers/{$id}", ['name' => 'Ana Ruiz', 'remarks' => str_repeat('x', 2001)])->assertStatus(422)->assertJsonValidationErrors('remarks');
+    }
 }

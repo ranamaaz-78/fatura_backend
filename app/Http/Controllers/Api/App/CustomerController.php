@@ -42,6 +42,7 @@ class CustomerController extends Controller
                         ->orWhere('phone', 'like', $like)
                         ->orWhere('nif', 'like', $like)
                         ->orWhere('nie', 'like', $like)
+                        ->orWhere('remarks', 'like', $like)
                         ->orWhere('code', 'like', $like);
                 });
             })
@@ -106,9 +107,11 @@ class CustomerController extends Controller
             'nif' => ['nullable', 'string', 'max:32'],
             'nie' => ['nullable', 'string', 'max:32'],
             'address' => ['nullable', 'string', 'max:255'],
+            // A private note: free text, kept exactly as typed.
+            'remarks' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        foreach (['company_name', 'phone', 'nif', 'nie', 'address'] as $field) {
+        foreach (['company_name', 'phone', 'nif', 'nie', 'address', 'remarks'] as $field) {
             $data[$field] = ($data[$field] ?? '') !== '' ? $data[$field] : null;
         }
 

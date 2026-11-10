@@ -15,6 +15,7 @@ use App\Models\TaxRate;
 use App\Models\User;
 use App\Services\DocumentNumber;
 use App\Services\PurchaseRecorder;
+use App\Services\SupplierLedger;
 use App\Services\SaleIssuer;
 use App\Services\SaleSettler;
 use App\Support\Barcode;
@@ -100,6 +101,7 @@ class DemoData
         private readonly SaleIssuer $sales,
         private readonly SaleSettler $settler,
         private readonly PurchaseRecorder $purchases,
+        private readonly SupplierLedger $ledger,
     ) {}
 
     public function seed(Company $company, User $owner): void
@@ -117,6 +119,7 @@ class DemoData
             $methods = $this->paymentMethods($company);
 
             $this->purchases($owner, $suppliers, $products);
+            $this->ledger($owner, $suppliers);
             $this->documents($owner, $customers, $products, $methods);
             $this->lowStock($products);
         } finally {
@@ -244,6 +247,44 @@ class DemoData
                 ['product_id' => $products[13]->id, 'quantity' => 10, 'unit_cost' => 1340],
                 ['product_id' => $products[14]->id, 'quantity' => 12, 'unit_cost' => 980],
             ],
+        ]);
+    }
+
+    /**
+     * A few entries of the supplier ledger: one settled, one half paid, one not paid yet. It has nothing to do with the
+     * purchases above (no products, no stock).
+     *
+     * @param  list<Supplier>  $suppliers
+     */
+    private function ledger(User $owner, array $suppliers): void
+    {
+        $method = CompanyPaymentMethod::withoutGlobalScopes()->where('company_id', $owner->company_id)->orderBy('sort_order')->orderBy('id')->value('id');
+
+        $settled = $this->ledger->record($owner, [
+            'supplier_id' => $suppliers[0]->id,
+            'bill_date' => now()->subDays(20)->toDateString(),
+            'description' => 'Showroom lighting: 60 LED lamps and 2 cartons of cable',
+            'reference' => 'LS-2012',
+            'amount_cents' => 48500,
+        ]);
+        $this->ledger->addPayment($owner, $settled, ['amount_cents' => 48500, 'paid_on' => now()->subDays(18)->toDateString(), 'payment_method_id' => $method, 'note' => null]);
+
+        $half = $this->ledger->record($owner, [
+            'supplier_id' => $suppliers[2]->id,
+            'bill_date' => now()->subDays(9)->toDateString(),
+            'description' => 'Two display shelves and a till counter',
+            'reference' => 'EH-871',
+            'amount_cents' => 120000,
+            'paid_cents' => 60000,
+            'payment_method_id' => $method,
+        ]);
+        $this->ledger->addPayment($owner, $half, ['amount_cents' => 20000, 'paid_on' => now()->subDays(3)->toDateString(), 'payment_method_id' => $method, 'note' => 'Second part']);
+
+        $this->ledger->record($owner, [
+            'supplier_id' => $suppliers[1]->id,
+            'bill_date' => now()->subDays(2)->toDateString(),
+            'description' => 'Packaging: boxes, tape and bags',
+            'amount_cents' => 23400,
         ]);
     }
 

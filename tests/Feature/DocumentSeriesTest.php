@@ -30,24 +30,12 @@ class DocumentSeriesTest extends TestCase
         $this->owner = User::factory()->businessAdmin()->create(['company_id' => $this->company->id]);
     }
 
-    /** The form as it is sent. Unless a test sets "first" itself, this month begins where every month does. */
-    private function series(array $override = []): array
+    private function own(string $typed)
     {
-        $series = array_replace_recursive([
-            'factura' => ['prefix' => 'INV', 'start' => 1],
-            'albaran' => ['prefix' => 'DN', 'start' => 1],
-            'quotation' => ['prefix' => 'QT', 'start' => 1],
-            'proforma' => ['prefix' => 'PRO', 'start' => 1],
-        ], $override);
-
-        foreach ($series as $kind => $row) {
-            $series[$kind]['first'] ??= $row['start'];
-        }
-
-        return ['series' => $series];
+        return $this->actingAs($this->owner, 'sanctum')->putJson('/api/app/document-series', ['mode' => 'manual', 'next_number' => $typed]);
     }
 
-    private function issue(string $type, ?string $issuedAt = null)
+    private function issue(string $type = 'factura', ?string $issuedAt = null)
     {
         $product = Product::factory()->create(['company_id' => $this->company->id, 'quantity' => 50]);
 
@@ -68,147 +56,110 @@ class DocumentSeriesTest extends TestCase
         ]);
     }
 
-    public function test_a_company_starts_with_the_standard_letters_and_numbers(): void
-    {
-        $month = now()->format('Ym');
-        $rows = collect($this->actingAs($this->owner, 'sanctum')->getJson('/api/app/document-series')->assertOk()->json('data.series'))->keyBy('kind');
-
-        $this->assertSame(['factura', 'albaran', 'quotation', 'proforma'], $rows->keys()->all());
-        $this->assertSame('F', $rows['factura']['prefix']);
-        $this->assertSame('AL', $rows['albaran']['prefix']);
-        $this->assertSame(1, $rows['factura']['start']);
-        $this->assertSame(1, $rows['factura']['first']);
-        $this->assertSame("F-{$month}/00001", $rows['factura']['next_number']);
-        $this->assertSame(0, $rows['factura']['issued_this_month']);
-    }
-
-    public function test_new_documents_use_the_letters_and_start_the_owner_chose(): void
+    public function test_a_company_starts_with_the_built_in_numbers(): void
     {
         $month = now()->format('Ym');
 
-        $this->actingAs($this->owner, 'sanctum')
-            ->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'acme', 'start' => 341]]))
-            ->assertOk()
-            ->assertJsonPath('data.series.0.prefix', 'ACME')
-            ->assertJsonPath('data.series.0.next_number', "ACME-{$month}/00341");
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/app/document-series')->assertOk()
+            ->assertJsonPath('data.mode', 'auto')
+            ->assertJsonPath('data.next_number', "F-{$month}/00001")
+            ->assertJsonPath('data.last_number', null)
+            ->assertJsonPath('data.automatic_example', "F-{$month}/00001");
 
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "ACME-{$month}/00341");
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "ACME-{$month}/00342");
-        $this->issue('albaran')->assertCreated()->assertJsonPath('data.number', "DN-{$month}/00001");
-
-        // What the screen that makes a new sale shows is the same number it will get.
-        $this->getJson('/api/app/sales/preview?type=factura')->assertJsonPath('data.number', "ACME-{$month}/00343");
+        $this->issue()->assertCreated()->assertJsonPath('data.number', "F-{$month}/00001");
     }
 
-    public function test_the_start_can_be_raised_later_and_never_takes_a_number_back(): void
+    public function test_the_typed_number_is_the_next_invoice_and_every_one_after_continues(): void
+    {
+        $this->own('ALP-00234')->assertOk()
+            ->assertJsonPath('data.mode', 'manual')
+            ->assertJsonPath('data.next_number', 'ALP-00234');
+
+        $this->issue()->assertCreated()->assertJsonPath('data.number', 'ALP-00234');
+        $this->issue()->assertCreated()->assertJsonPath('data.number', 'ALP-00235');
+
+        // What the new-sale screen shows is what the next invoice gets.
+        $this->getJson('/api/app/sales/preview?type=factura')->assertJsonPath('data.number', 'ALP-00236');
+        $this->getJson('/api/app/document-series')->assertJsonPath('data.last_number', 'ALP-00235');
+    }
+
+    public function test_the_width_is_kept_and_the_series_does_not_restart_next_month(): void
+    {
+        $this->own('INV/0007')->assertOk();
+
+        // An invoice dated last month and one dated now: one series, no restart when the month changes.
+        $lastMonth = now()->subMonthNoOverflow()->endOfMonth()->startOfDay()->addHours(12)->toIso8601String();
+        $this->issue('factura', $lastMonth)->assertCreated()->assertJsonPath('data.number', 'INV/0007');
+        $this->issue()->assertCreated()->assertJsonPath('data.number', 'INV/0008');
+    }
+
+    public function test_a_number_without_a_prefix_and_a_width_that_grows_work(): void
+    {
+        $this->own('99')->assertOk();
+        $this->issue()->assertCreated()->assertJsonPath('data.number', '99');
+        $this->issue()->assertCreated()->assertJsonPath('data.number', '100');
+    }
+
+    public function test_the_series_never_repeats_a_number_that_already_exists(): void
+    {
+        $this->own('ALP-00010')->assertOk();
+        $this->issue()->assertCreated()->assertJsonPath('data.number', 'ALP-00010');
+        $this->issue()->assertCreated()->assertJsonPath('data.number', 'ALP-00011');
+
+        // New letters, then back to the old ones starting low: the used numbers are skipped.
+        $this->own('XYZ-1')->assertOk();
+        $this->own('ALP-00010')->assertOk()->assertJsonPath('data.next_number', 'ALP-00012');
+        $this->issue()->assertCreated()->assertJsonPath('data.number', 'ALP-00012');
+    }
+
+    public function test_with_the_same_letters_the_number_can_only_go_up(): void
+    {
+        $this->own('ALP-00050')->assertOk();
+        $this->issue()->assertCreated();
+        $this->issue()->assertCreated();
+
+        $this->own('ALP-00040')->assertStatus(422)->assertJsonValidationErrors('next_number');
+        $this->own('ALP-00051')->assertStatus(422);
+
+        $this->own('ALP-00500')->assertOk();
+        $this->issue()->assertCreated()->assertJsonPath('data.number', 'ALP-00500');
+    }
+
+    public function test_going_back_to_automatic_gives_the_built_in_numbers_and_leaves_their_counter_alone(): void
     {
         $month = now()->format('Ym');
-        $this->actingAs($this->owner, 'sanctum');
 
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00001");
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00002");
+        $this->issue()->assertCreated()->assertJsonPath('data.number', "F-{$month}/00001");
+        $this->own('ALP-00234')->assertOk();
+        $this->issue()->assertCreated()->assertJsonPath('data.number', 'ALP-00234');
 
-        // Raising it jumps the series forward...
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'F', 'start' => 500]]))->assertOk();
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00500");
-
-        // ...lowering it again does not repeat a number that was used.
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'F', 'start' => 10]]))->assertOk();
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00501");
+        $this->putJson('/api/app/document-series', ['mode' => 'auto'])->assertOk()->assertJsonPath('data.mode', 'auto');
+        $this->assertNull($this->company->fresh()->document_series);
+        $this->issue()->assertCreated()->assertJsonPath('data.number', "F-{$month}/00002");
     }
 
-    public function test_changing_the_letters_keeps_the_numbers_going_and_never_repeats_one(): void
+    public function test_the_other_documents_always_keep_the_built_in_numbers(): void
     {
         $month = now()->format('Ym');
-        $this->actingAs($this->owner, 'sanctum');
+        $this->own('ALP-00234')->assertOk();
 
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00001");
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'ACME', 'start' => 1]]))->assertOk();
+        $this->issue('albaran')->assertCreated()->assertJsonPath('data.number', "AL-{$month}/00001");
+        $this->issue('quotation')->assertCreated()->assertJsonPath('data.number', "Q-{$month}/00001");
+        $this->issue('proforma')->assertCreated()->assertJsonPath('data.number', "PF-{$month}/00001");
 
-        // The old invoice keeps its number; the next one carries on in the new letters.
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "ACME-{$month}/00002");
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'F', 'start' => 1]]))->assertOk();
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00003");
+        // Anything the earlier version saved for them is ignored.
+        $this->company->forceFill(['document_series' => ['albaran' => ['prefix' => 'DN', 'start' => 50], 'factura' => ['mode' => 'manual', 'prefix' => 'ALP-', 'width' => 5]]])->save();
+        $this->issue('albaran')->assertCreated()->assertJsonPath('data.number', "AL-{$month}/00002");
     }
 
-    public function test_this_month_can_begin_at_one_number_and_every_next_month_at_another(): void
+    public function test_the_number_is_checked(): void
     {
-        $month = now()->format('Ym');
-        $lastMonth = now()->subMonth()->format('Ym');
-        $this->actingAs($this->owner, 'sanctum');
+        foreach (['ALP-', 'ALP', 'AL P-00234', 'ALP#00234', 'ALP-0', 'ALP-000000000', str_repeat('A', 28).'-001'] as $bad) {
+            $this->own($bad)->assertStatus(422)->assertJsonValidationErrors('next_number');
+        }
 
-        // This month's first invoice is 123; every other month begins at 1.
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'F', 'first' => 123, 'start' => 1]]))
-            ->assertOk()
-            ->assertJsonPath('data.series.0.first', 123)
-            ->assertJsonPath('data.series.0.start', 1)
-            ->assertJsonPath('data.series.0.next_number', "F-{$month}/00123");
-
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00123");
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00124");
-
-        // Another month's series is not touched by it: it begins at the usual start.
-        $this->issue('factura', now()->subMonth()->endOfMonth()->toIso8601String())->assertCreated()->assertJsonPath('data.number', "F-{$lastMonth}/00001");
-        $this->issue('albaran')->assertCreated()->assertJsonPath('data.number', "DN-{$month}/00001");
-    }
-
-    public function test_the_first_number_is_for_one_month_and_the_next_month_goes_back_to_the_usual_start(): void
-    {
-        $this->actingAs($this->owner, 'sanctum');
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'F', 'first' => 123, 'start' => 1]]))->assertOk();
-
-        // Time passes: the month it was set for is now a month ago.
-        $saved = $this->company->fresh()->document_series;
-        $saved['factura']['first_period'] = (int) now()->subMonth()->format('Ym');
-        $this->company->update(['document_series' => $saved]);
-
-        $rows = collect($this->getJson('/api/app/document-series')->json('data.series'))->keyBy('kind');
-        $this->assertSame(1, $rows['factura']['first'], 'the screen shows where this month begins, which is the usual start again');
-        $this->assertSame(1, $rows['factura']['start']);
-        $this->assertSame('F-'.now()->format('Ym').'/00001', $rows['factura']['next_number']);
-
-        // Saving what the screen shows does not bring the old first number back.
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'F', 'start' => 1, 'first' => 1]]))->assertOk();
-        $this->assertArrayNotHasKey('first', $this->company->fresh()->document_series['factura']);
-    }
-
-    public function test_a_first_number_below_what_was_issued_never_repeats_a_number(): void
-    {
-        $month = now()->format('Ym');
-        $this->actingAs($this->owner, 'sanctum');
-
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00001");
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00002");
-
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'F', 'first' => 1, 'start' => 1]]))->assertOk();
-        $this->issue('factura')->assertCreated()->assertJsonPath('data.number', "F-{$month}/00003");
-    }
-
-    public function test_the_form_is_checked(): void
-    {
-        $this->actingAs($this->owner, 'sanctum');
-
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'IN V']]))->assertStatus(422)->assertJsonValidationErrors('series.factura.prefix');
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'WAYTOOLONGPREFIX']]))->assertStatus(422)->assertJsonValidationErrors('series.factura.prefix');
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'A/B']]))->assertStatus(422)->assertJsonValidationErrors('series.factura.prefix');
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['start' => 0]]))->assertStatus(422)->assertJsonValidationErrors('series.factura.start');
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['start' => 10000000]]))->assertStatus(422)->assertJsonValidationErrors('series.factura.start');
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['first' => 0]]))->assertStatus(422)->assertJsonValidationErrors('series.factura.first');
-        $this->putJson('/api/app/document-series', $this->series(['factura' => ['first' => 10000000]]))->assertStatus(422)->assertJsonValidationErrors('series.factura.first');
-        $this->putJson('/api/app/document-series', ['series' => ['factura' => ['prefix' => 'INV', 'start' => 1]]])->assertStatus(422);
-    }
-
-    public function test_two_kinds_cannot_share_letters(): void
-    {
-        $this->actingAs($this->owner, 'sanctum')
-            ->putJson('/api/app/document-series', $this->series(['albaran' => ['prefix' => 'inv']]))
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('series.albaran.prefix');
-
-        // The letters of the retired credit note stay taken.
-        $this->putJson('/api/app/document-series', $this->series(['quotation' => ['prefix' => 'AB']]))
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('series.quotation.prefix');
+        $this->putJson('/api/app/document-series', ['mode' => 'manual'])->assertStatus(422)->assertJsonValidationErrors('next_number');
+        $this->putJson('/api/app/document-series', ['mode' => 'weekly'])->assertStatus(422)->assertJsonValidationErrors('mode');
 
         // Nothing was saved by the refused attempts.
         $this->assertNull($this->company->fresh()->document_series);
@@ -221,12 +172,9 @@ class DocumentSeriesTest extends TestCase
         Subscription::factory()->create(['company_id' => $other->id]);
         $stranger = User::factory()->businessAdmin()->create(['company_id' => $other->id]);
 
-        $this->actingAs($this->owner, 'sanctum')
-            ->putJson('/api/app/document-series', $this->series(['factura' => ['prefix' => 'ACME', 'start' => 900]]))->assertOk();
+        $this->own('ALP-00900')->assertOk();
 
-        $rows = collect($this->actingAs($stranger, 'sanctum')->getJson('/api/app/document-series')->json('data.series'))->keyBy('kind');
-        $this->assertSame('F', $rows['factura']['prefix']);
-        $this->assertSame("F-{$month}/00001", $rows['factura']['next_number']);
+        $this->actingAs($stranger, 'sanctum')->getJson('/api/app/document-series')->assertJsonPath('data.mode', 'auto')->assertJsonPath('data.next_number', "F-{$month}/00001");
     }
 
     public function test_who_may_see_and_change_the_numbering(): void
@@ -243,10 +191,10 @@ class DocumentSeriesTest extends TestCase
         // The manager can look at settings but not change them; the accountant has no settings at all.
         $manager = User::where('email', 'manager@shop.test')->firstOrFail();
         $this->actingAs($manager, 'sanctum')->getJson('/api/app/document-series')->assertOk();
-        $this->putJson('/api/app/document-series', $this->series())->assertForbidden();
+        $this->putJson('/api/app/document-series', ['mode' => 'auto'])->assertForbidden();
 
         $accountant = User::where('email', 'accountant@shop.test')->firstOrFail();
         $this->actingAs($accountant, 'sanctum')->getJson('/api/app/document-series')->assertForbidden();
-        $this->putJson('/api/app/document-series', $this->series())->assertForbidden();
+        $this->putJson('/api/app/document-series', ['mode' => 'auto'])->assertForbidden();
     }
 }

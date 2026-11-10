@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\SalesDocument;
 use App\Models\Supplier;
+use App\Models\SupplierBill;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -25,6 +26,7 @@ class DemoCap
         'customers' => Customer::class,
         'suppliers' => Supplier::class,
         'purchases' => Purchase::class,
+        'ledger' => SupplierBill::class,
     ];
 
     public function handle(Request $request, Closure $next, string $what, string $max): Response

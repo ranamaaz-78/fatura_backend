@@ -18,6 +18,7 @@ class CustomerResource extends JsonResource
             'nif' => $this->nif,
             'nie' => $this->nie,
             'address' => $this->address,
+            'remarks' => $this->remarks,
             'is_active' => $this->is_active,
             'documents_count' => $this->whenCounted('documents'),
         ];

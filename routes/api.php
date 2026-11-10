@@ -144,6 +144,15 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::post('/purchases', [Tenant\PurchaseController::class, 'store'])->middleware('permission:stock.create')->middleware('demo.cap:purchases,80');
         Route::get('/purchases/{purchase}', [Tenant\PurchaseController::class, 'show'])->middleware('permission:stock.view');
         Route::post('/purchases/{purchase}/void', [Tenant\PurchaseController::class, 'void'])->middleware('permission:stock.void');
+        // The supplier ledger: its own record book, apart from Purchases and the stock.
+        Route::get('/ledger', [Tenant\SupplierLedgerController::class, 'index'])->middleware('permission:ledger.view');
+        Route::get('/ledger/suppliers', [Tenant\SupplierLedgerController::class, 'suppliers'])->middleware('permission:ledger.view');
+        Route::get('/ledger/suppliers/{supplier}', [Tenant\SupplierLedgerController::class, 'statement'])->middleware('permission:ledger.view');
+        Route::post('/ledger', [Tenant\SupplierLedgerController::class, 'store'])->middleware('permission:ledger.create')->middleware('demo.cap:ledger,80');
+        Route::get('/ledger/{bill}', [Tenant\SupplierLedgerController::class, 'show'])->middleware('permission:ledger.view');
+        Route::post('/ledger/{bill}/payments', [Tenant\SupplierLedgerController::class, 'addPayment'])->middleware('permission:ledger.pay');
+        Route::delete('/ledger/{bill}/payments/{payment}', [Tenant\SupplierLedgerController::class, 'removePayment'])->middleware('permission:ledger.pay');
+        Route::post('/ledger/{bill}/void', [Tenant\SupplierLedgerController::class, 'void'])->middleware('permission:ledger.void');
         Route::get('/suppliers', [Tenant\SupplierController::class, 'index'])->middleware('permission:suppliers.view|stock.view');
         Route::post('/suppliers', [Tenant\SupplierController::class, 'store'])->middleware('permission:suppliers.create')->middleware('demo.cap:suppliers,40');
         Route::patch('/suppliers/{supplier}/active', [Tenant\SupplierController::class, 'updateActive'])->middleware('permission:suppliers.update');

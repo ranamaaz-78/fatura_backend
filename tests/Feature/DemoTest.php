@@ -191,12 +191,8 @@ class DemoTest extends TestCase
         ])->assertCreated();
         $this->getJson('/api/app/dashboard')->assertOk()->assertJsonPath('data.company.name', 'Demo Shop');
         $this->putJson('/api/app/document-series', [
-            'series' => [
-                'factura' => ['prefix' => 'TRY', 'first' => 1, 'start' => 1],
-                'albaran' => ['prefix' => 'AL', 'first' => 1, 'start' => 1],
-                'quotation' => ['prefix' => 'Q', 'first' => 1, 'start' => 1],
-                'proforma' => ['prefix' => 'PF', 'first' => 1, 'start' => 1],
-            ],
+            'mode' => 'manual',
+            'next_number' => 'TRY-001',
         ])->assertOk();
     }
 
@@ -237,7 +233,7 @@ class DemoTest extends TestCase
         // A visitor trashes the demo: a product deleted, a client added, the numbering changed.
         $victim = Product::withoutGlobalScopes()->where('company_id', $company->id)->first();
         $this->postJson('/api/app/customers', ['name' => 'Practice Client'])->assertCreated();
-        $company->forceFill(['document_series' => ['factura' => ['prefix' => 'TRY', 'start' => 50]]])->save();
+        $company->forceFill(['document_series' => ['factura' => ['mode' => 'manual', 'prefix' => 'TRY-', 'width' => 3]]])->save();
         $victim->delete();
 
         app(DemoResetter::class)->reset();

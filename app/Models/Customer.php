@@ -26,6 +26,7 @@ class Customer extends Model
         'nif',
         'nie',
         'address',
+        'remarks',
         'is_active',
     ];
 
