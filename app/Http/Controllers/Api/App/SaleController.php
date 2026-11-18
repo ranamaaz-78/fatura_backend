@@ -13,6 +13,7 @@ use App\Services\DocumentNumber;
 use App\Services\SaleIssuer;
 use App\Services\SaleReturner;
 use App\Services\SaleSettler;
+use App\Services\SaleDeleter;
 use App\Services\SaleVoider;
 use App\Services\SettlementInvoicer;
 use App\Support\IssueDate;
@@ -30,6 +31,7 @@ class SaleController extends Controller
     public function __construct(
         private readonly SaleIssuer $issuer,
         private readonly SaleVoider $voider,
+        private readonly SaleDeleter $deleter,
         private readonly SaleSettler $settler,
         private readonly SaleReturner $returner,
         private readonly SettlementInvoicer $invoicer,
@@ -66,8 +68,10 @@ class SaleController extends Controller
             'type' => ['nullable', Rule::in(SalesDocument::TYPES)],
             'payment_status' => ['nullable', Rule::in(SalesDocument::PAYMENTS)],
             'display_status' => ['nullable', Rule::in(['pending', 'paid', 'partial', 'voided'])],
+            // The Deleted list: only for the types the person may delete.
+            'trashed' => ['nullable', Rule::in(['0', '1', 'true', 'false', 0, 1, true, false])],
             'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'min:5', 'max:50'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:1000'],
         ]);
 
         $viewable = collect(SalesDocument::TYPES)
@@ -79,25 +83,38 @@ class SaleController extends Controller
             abort(Permissions::denied());
         }
 
-        $base = SalesDocument::query()
-            ->whereIn('type', $viewable)
-            ->when($filters['type'] ?? null, function (Builder $query, string $type) {
+        $deletable = collect($viewable)
+            ->filter(fn (string $type) => $request->user()->hasPermission(Permissions::forDocument($type).'.delete'))
+            ->values()
+            ->all();
+        $trashed = $request->boolean('trashed');
+
+        $scope = function (Builder $query) use ($filters) {
+            $query->when($filters['type'] ?? null, function (Builder $query, string $type) {
                 $query->where('type', $type);
                 if ($type === 'quotation') {
                     $query->whereNull('converted_at');
                 }
             })
-            ->when($filters['search'] ?? null, function (Builder $query, string $search) {
-                $like = '%'.$search.'%';
-                $query->where(function (Builder $inner) use ($like) {
-                    $inner->where('number', 'like', $like)
-                        ->orWhere('client_name', 'like', $like)
-                        ->orWhere('client_company', 'like', $like);
+                ->when($filters['search'] ?? null, function (Builder $query, string $search) {
+                    $like = '%'.$search.'%';
+                    $query->where(function (Builder $inner) use ($like) {
+                        $inner->where('number', 'like', $like)
+                            ->orWhere('client_name', 'like', $like)
+                            ->orWhere('client_company', 'like', $like);
+                    });
                 });
-            });
 
-        $documents = (clone $base)
-            ->with('paymentMethod')
+            return $query;
+        };
+
+        // The live list (what every count and total is about), and the Deleted list beside it.
+        $base = $scope(SalesDocument::query()->whereIn('type', $viewable));
+        $trash = $scope(SalesDocument::onlyTrashed()->whereIn('type', $deletable));
+        $listed = $trashed ? $trash : $base;
+
+        $documents = (clone $listed)
+            ->with(['paymentMethod', 'deleter', 'settlements', 'convertedTo'])
             ->withSum('settlements as settled_cents', 'total_cents')
             ->when($filters['payment_status'] ?? null, fn ($query, $status) => $query->where('payment_status', $status))
             ->when($filters['display_status'] ?? null, fn ($query, $status) => $this->applyDisplayStatus($query, $status))
@@ -114,7 +131,7 @@ class SaleController extends Controller
                 'per_page' => $documents->perPage(),
                 'total' => $documents->total(),
             ],
-            'counts' => $this->listCounts($base),
+            'counts' => $this->listCounts($base) + ['trashed' => (clone $trash)->count()],
             'stats' => $this->listStats($base),
         ]);
     }
@@ -162,7 +179,12 @@ class SaleController extends Controller
     {
         $this->allow($request, $sale->type, 'view');
 
-        $sale->load([...SaleSettler::relations(), 'fromSettlement.document']);
+        // A deleted document is seen only by people who may delete (and so restore) that kind.
+        if ($sale->trashed()) {
+            $this->allow($request, $sale->type, 'delete');
+        }
+
+        $sale->load([...SaleSettler::relations(), 'fromSettlement.document', 'deleter']);
 
         return $this->success(new SalesDocumentResource($sale));
     }
@@ -378,6 +400,91 @@ class SaleController extends Controller
         );
     }
 
+    /** Deletes a document that was never paid. It can be brought back from the Deleted list. */
+    public function destroy(Request $request, SalesDocument $sale): JsonResponse
+    {
+        $this->allow($request, $sale->type, 'delete');
+
+        $document = $this->deleter->delete($request->user(), $sale);
+
+        return $this->success(new SalesDocumentResource($document), __(':number deleted. You can restore it from the Restore page.', ['number' => $document->number]));
+    }
+
+    public function restore(Request $request, SalesDocument $sale): JsonResponse
+    {
+        $this->allow($request, $sale->type, 'delete');
+
+        $document = $this->deleter->restore($request->user(), $sale);
+
+        return $this->success(new SalesDocumentResource($document), __(':number restored.', ['number' => $document->number]));
+    }
+
+    /** How many deleted documents there are of each kind (for the Restore page's tabs), for the kinds this person may restore. */
+    public function trashCounts(Request $request): JsonResponse
+    {
+        $counts = [];
+
+        foreach (['factura', 'albaran', 'quotation', 'proforma'] as $type) {
+            $counts[$type] = $request->user()->hasPermission(Permissions::forDocument($type).'.delete')
+                ? SalesDocument::onlyTrashed()->where('type', $type)->count()
+                : 0;
+        }
+
+        return $this->success($counts);
+    }
+
+    /** Deletes many at once. Each one follows its own rules: the ones that cannot be deleted are listed with the reason. */
+    public function bulkDestroy(Request $request): JsonResponse
+    {
+        return $this->bulk($request, false);
+    }
+
+    public function bulkRestore(Request $request): JsonResponse
+    {
+        return $this->bulk($request, true);
+    }
+
+    private function bulk(Request $request, bool $restoring): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:200'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $documents = SalesDocument::withTrashed()->whereIn('id', array_unique($data['ids']))->get()->keyBy('id');
+        $done = [];
+        $failed = [];
+
+        foreach (array_unique($data['ids']) as $id) {
+            $document = $documents->get($id);
+
+            if ($document === null) {
+                $failed[] = ['id' => $id, 'number' => null, 'reason' => __('Not found.')];
+
+                continue;
+            }
+
+            if (! $request->user()->hasPermission(Permissions::forDocument($document->type).'.delete')) {
+                $failed[] = ['id' => $id, 'number' => $document->number, 'reason' => __('You do not have permission to do that.')];
+
+                continue;
+            }
+
+            try {
+                $restoring ? $this->deleter->restore($request->user(), $document) : $this->deleter->delete($request->user(), $document);
+                $done[] = $id;
+            } catch (\Illuminate\Validation\ValidationException $exception) {
+                $failed[] = ['id' => $id, 'number' => $document->number, 'reason' => (string) collect($exception->errors())->flatten()->first()];
+            }
+        }
+
+        $message = $restoring
+            ? __(':count restored.', ['count' => count($done)])
+            : __(':count deleted. You can restore them from the Restore page.', ['count' => count($done)]);
+
+        return $this->success(['done' => $done, 'failed' => $failed], $message);
+    }
+
     private function applyDisplayStatus(Builder $query, string $status): void
     {
         if ($status === 'voided') {
@@ -468,6 +575,7 @@ class SaleController extends Controller
             'client_nif' => ['nullable', 'string', 'max:32'],
             'client_nie' => ['nullable', 'string', 'max:32'],
             'client_address' => ['nullable', 'string', 'max:255'],
+            'client_email' => ['nullable', 'email:rfc', 'max:190'],
             // A discount on the whole bill: a percentage, or an amount in cents.
             'discount_type' => ['nullable', Rule::in(['percent', 'amount'])],
             'discount_value' => ['nullable', 'required_with:discount_type', 'numeric', 'min:0'],

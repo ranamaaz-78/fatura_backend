@@ -21,6 +21,7 @@ class Supplier extends Model
         'name',
         'company_name',
         'phone',
+        'email',
         'nif',
         'nie',
         'is_active',

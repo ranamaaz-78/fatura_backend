@@ -27,7 +27,7 @@ class PurchaseController extends Controller
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
             'status' => ['nullable', Rule::in(['all', 'active', 'voided'])],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:1000'],
             // The export asks for the lines of every purchase on the page, so a whole list can be written out.
             'with_lines' => ['nullable', Rule::in(['0', '1', 'true', 'false', 0, 1, true, false])],
         ]);
@@ -50,7 +50,7 @@ class PurchaseController extends Controller
 
         $page = (clone $query)
             ->withCount('lines')
-            ->when($request->boolean('with_lines'), fn (Builder $q) => $q->with('lines'))
+            ->when($request->boolean('with_lines'), fn (Builder $q) => $q->with('lines.product:id,barcode'))
             ->orderByDesc('purchased_on')
             ->orderByDesc('id')
             ->paginate($filters['per_page'] ?? 10);
@@ -76,27 +76,43 @@ class PurchaseController extends Controller
 
     public function show(Purchase $purchase): JsonResponse
     {
-        return $this->success(new PurchaseResource($purchase->load(['lines', 'creator:id,name'])));
+        return $this->success(new PurchaseResource($purchase->load(['lines.product:id,barcode', 'creator:id,name', 'ledgerEntry'])));
     }
 
     public function store(Request $request): JsonResponse
     {
+        $purchase = $this->recorder->record($request->user(), $this->validated($request));
+
+        return $this->success(new PurchaseResource($purchase), __('Purchase saved. The stock was updated.'), 201);
+    }
+
+    /** Changes a purchase while nothing has been paid against it in Supplier Payments. */
+    public function update(Request $request, Purchase $purchase): JsonResponse
+    {
+        $purchase = $this->recorder->update($request->user(), $purchase, $this->validated($request));
+
+        return $this->success(new PurchaseResource($purchase), __('Purchase updated. The stock and Supplier Payments follow the change.'));
+    }
+
+    private function validated(Request $request): array
+    {
         $companyId = (int) $request->user()->company_id;
 
-        $data = $request->validate([
+        return $request->validate([
             'supplier_id' => ['required', 'integer', Rule::exists('suppliers', 'id')->where('company_id', $companyId)],
             'purchased_on' => ['required', 'date', 'before_or_equal:today'],
             'supplier_invoice_no' => ['nullable', 'string', 'max:60'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            // IVA on the whole purchase: none, excluded (added on top of the typed prices) or included (already in them).
+            'iva_mode' => ['nullable', Rule::in(['none', 'excluded', 'included'])],
+            'iva_percent' => ['nullable', 'numeric', 'min:0', 'max:100', 'required_if:iva_mode,excluded,included'],
             'lines' => ['required', 'array', 'min:1', 'max:200'],
             'lines.*.product_id' => ['required', 'integer', Rule::exists('products', 'id')->where('company_id', $companyId)],
             'lines.*.quantity' => ['required', 'integer', 'min:1', 'max:9999999'],
             'lines.*.unit_cost' => ['required', 'integer', 'min:0', 'max:999999999'],
+            // Optional: the selling price of the product, changed together with its buying price.
+            'lines.*.selling_price' => ['nullable', 'integer', 'min:0', 'max:999999999'],
         ]);
-
-        $purchase = $this->recorder->record($request->user(), $data);
-
-        return $this->success(new PurchaseResource($purchase), __('Purchase saved. The stock was updated.'), 201);
     }
 
     public function void(Request $request, Purchase $purchase): JsonResponse

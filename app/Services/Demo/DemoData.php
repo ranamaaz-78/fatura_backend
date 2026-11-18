@@ -361,6 +361,7 @@ class DemoData
             'client_nif' => $customer->nif,
             'client_nie' => null,
             'client_address' => $customer->address,
+            'client_email' => $customer->email,
             'discount_type' => null,
             'discount_value' => null,
             'recargo_rate_id' => null,

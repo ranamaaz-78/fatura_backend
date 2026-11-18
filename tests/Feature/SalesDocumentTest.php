@@ -31,6 +31,14 @@ class SalesDocumentTest extends TestCase
         $this->owner = User::factory()->businessAdmin()->create(['company_id' => $this->company->id]);
     }
 
+    public function test_each_line_carries_the_barcode_of_its_product_for_the_sku_column(): void
+    {
+        $product = Product::factory()->create(['company_id' => $this->company->id, 'quantity' => 10, 'barcode' => '8431234567893', 'brand' => 'Philips']);
+        $id = $this->issue('factura', $product)->assertCreated()->assertJsonPath('data.lines.0.barcode', '8431234567893')->assertJsonPath('data.lines.0.brand', 'Philips')->json('data.id');
+
+        $this->getJson("/api/app/sales/{$id}")->assertJsonPath('data.lines.0.barcode', '8431234567893');
+    }
+
     public function test_each_document_kind_gets_its_own_running_number(): void
     {
         $month = now()->format('Ym');

@@ -196,10 +196,43 @@ class ProductImageController extends Controller
 
     public function destroy(ProductImage $productImage): JsonResponse
     {
+        if (! $this->removeWithFile($productImage)) {
+            return $this->error(__('The file could not be removed from storage. Nothing was deleted, please try again.'), 500);
+        }
+
+        return $this->success([], __('File deleted.'));
+    }
+
+    /** Deletes the ticked images in one go. One that cannot be removed from storage stays and is listed; the rest go. */
+    public function bulkDestroy(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'uuids' => ['required', 'array', 'min:1', 'max:500'],
+            'uuids.*' => ['string'],
+        ]);
+
+        $done = [];
+        $failed = [];
+
+        foreach (ProductImage::query()->whereIn('uuid', array_unique($data['uuids']))->get() as $image) {
+            if ($this->removeWithFile($image)) {
+                $done[] = $image->uuid;
+            } else {
+                $failed[] = ['uuid' => $image->uuid, 'name' => $image->name];
+            }
+        }
+
+        return $this->success(['done' => $done, 'failed' => $failed], __(':count files deleted.', ['count' => count($done)]));
+    }
+
+    /**
+     * The row and the file go together. If the file will not delete, the row stays too, so nothing is left behind in
+     * storage without a record.
+     */
+    private function removeWithFile(ProductImage $productImage): bool
+    {
         $path = $productImage->path;
 
-        // The row and the file go together. If the file will not delete, the row stays
-        // too, so nothing is left behind in storage without a record.
         try {
             DB::transaction(function () use ($productImage, $path) {
                 $productImage->delete();
@@ -211,10 +244,10 @@ class ProductImageController extends Controller
         } catch (RuntimeException $e) {
             Log::error($e->getMessage());
 
-            return $this->error(__('The file could not be removed from storage. Nothing was deleted, please try again.'), 500);
+            return false;
         }
 
-        return $this->success([], __('File deleted.'));
+        return true;
     }
 
     /** Streams the bytes for a member of the owning company only. */

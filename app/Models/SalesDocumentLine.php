@@ -8,6 +8,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SalesDocumentLine extends Model
 {
+    // The printed lines show the product's barcode (as the SKU) and brand, so they come along with the lines.
+    protected $with = ['product:id,barcode,brand'];
+
     protected $fillable = [
         'sales_document_id',
         'product_id',

@@ -23,6 +23,14 @@ class SalesDocumentResource extends JsonResource
             'voided_at' => $this->voided_at?->toIso8601String(),
             'void_reason' => $this->void_reason,
             'is_voided' => $this->isVoided(),
+            // Deleted: only seen in the Deleted list, where it can be restored.
+            'is_deleted' => $this->trashed(),
+            'deleted_at' => $this->deleted_at?->toIso8601String(),
+            'deleted_by_name' => $this->whenLoaded('deleter', fn () => $this->deleter?->name),
+            'can_restore' => $this->trashed(),
+            // Whether it may be deleted, and if not why (when the document is opened, and on list rows that load their settlements).
+            'can_delete' => $this->when($this->relationLoaded('lines') || $this->relationLoaded('settlements'), fn () => $this->canDelete()),
+            'delete_blocked' => $this->when($this->relationLoaded('lines') || $this->relationLoaded('settlements'), fn () => $this->deleteBlockedReason()),
             'converted_to_id' => $this->converted_to_id,
             'converted_at' => $this->converted_at?->toIso8601String(),
             'is_converted' => $this->isConverted(),
@@ -47,6 +55,7 @@ class SalesDocumentResource extends JsonResource
             'client_name' => Text::proper($this->client_name),
             'client_company' => Text::proper($this->client_company),
             'client_phone' => $this->client_phone,
+            'client_email' => $this->client_email,
             'client_nif' => $this->client_nif,
             'client_nie' => $this->client_nie,
             'client_address' => Text::proper($this->client_address),

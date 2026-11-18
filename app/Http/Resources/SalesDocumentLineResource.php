@@ -17,6 +17,10 @@ class SalesDocumentLineResource extends JsonResource
             'position' => $this->position,
             'product_id' => $this->product_id,
             'article' => $this->article,
+            // The product's barcode: the SKU column of the printed document. Empty when the product is gone or has none.
+            'barcode' => $this->product?->barcode,
+            // The product's brand, written with the description on a printed document.
+            'brand' => $this->product?->brand,
             'description' => $this->description,
             'quantity' => $this->quantity,
             'unit_price' => $this->unit_price,

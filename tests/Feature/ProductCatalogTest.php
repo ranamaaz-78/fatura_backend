@@ -476,4 +476,64 @@ class ProductCatalogTest extends TestCase
         );
         $this->assertSame(1, Supplier::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
     }
+
+    public function test_the_list_can_be_searched_by_short_code_as_well_as_name_brand_and_barcode(): void
+    {
+        $this->actingAs($this->owner, 'sanctum');
+        Product::factory()->create(['company_id' => $this->company->id, 'article' => 'Denim Jeans', 'short_code' => 'JNS-042', 'brand' => 'Levis', 'barcode' => '8431234567893']);
+        Product::factory()->create(['company_id' => $this->company->id, 'article' => 'Lamp', 'short_code' => 'LMP-001', 'brand' => 'Philips', 'barcode' => '8431234567800']);
+
+        $names = fn (string $search) => collect($this->getJson('/api/app/products?search='.urlencode($search))->assertOk()->json('data.items'))->pluck('article')->all();
+
+        $this->assertSame(['Denim Jeans'], $names('JNS-042'));
+        $this->assertSame(['Denim Jeans'], $names('jns'));
+        $this->assertSame(['Lamp'], $names('LMP-0'));
+        // The old ways still work.
+        $this->assertSame(['Denim Jeans'], $names('Levis'));
+        $this->assertSame(['Lamp'], $names('8431234567800'));
+        $this->assertSame([], $names('nothing-like-this'));
+    }
+
+    public function test_ticked_products_can_be_deleted_together_and_only_this_companys_go(): void
+    {
+        $this->actingAs($this->owner, 'sanctum');
+        $mine = Product::factory()->count(3)->create(['company_id' => $this->company->id]);
+        $theirs = Product::factory()->create(['company_id' => Company::factory()->create()->id]);
+
+        $this->postJson('/api/app/products/bulk-delete', ['ids' => [$mine[0]->id, $mine[1]->id, $theirs->id]])
+            ->assertOk()
+            ->assertJsonPath('data.deleted', 2);
+
+        $this->assertNull(Product::withoutGlobalScopes()->find($mine[0]->id));
+        $this->assertNull(Product::withoutGlobalScopes()->find($mine[1]->id));
+        $this->assertNotNull(Product::withoutGlobalScopes()->find($mine[2]->id), 'the one left unticked stays');
+        $this->assertNotNull(Product::withoutGlobalScopes()->find($theirs->id), 'another company is out of reach');
+
+        $this->postJson('/api/app/products/bulk-delete', ['ids' => []])->assertStatus(422);
+    }
+
+    public function test_bulk_delete_needs_the_delete_permission(): void
+    {
+        $this->actingAs($this->owner, 'sanctum')->postJson('/api/app/team', [
+            'name' => 'Marta Rivas',
+            'email' => 'cashier@shop.test',
+            'password' => 'secret-pass-1',
+            'permissions' => \App\Support\Permissions::preset('cashier'),
+        ])->assertCreated();
+        $product = Product::factory()->create(['company_id' => $this->company->id]);
+
+        $this->actingAs(User::where('email', 'cashier@shop.test')->firstOrFail(), 'sanctum')
+            ->postJson('/api/app/products/bulk-delete', ['ids' => [$product->id]])
+            ->assertForbidden();
+    }
+
+    public function test_a_list_can_ask_for_all_rows_up_to_a_thousand(): void
+    {
+        $this->actingAs($this->owner, 'sanctum');
+        Product::factory()->count(12)->create(['company_id' => $this->company->id]);
+
+        $this->getJson('/api/app/products?per_page=1000')->assertOk()->assertJsonCount(12, 'data.items')->assertJsonPath('data.meta.per_page', 1000)->assertJsonPath('data.meta.last_page', 1);
+        $this->getJson('/api/app/products?per_page=10')->assertOk()->assertJsonCount(10, 'data.items')->assertJsonPath('data.meta.last_page', 2);
+        $this->getJson('/api/app/products?per_page=1001')->assertStatus(422);
+    }
 }

@@ -90,6 +90,7 @@ class SettlementInvoicer
                 'client_nif' => $document->client_nif,
                 'client_nie' => $document->client_nie,
                 'client_address' => $document->client_address,
+                'client_email' => $document->client_email,
                 'lines' => $lines,
             ]);
 

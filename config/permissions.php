@@ -13,10 +13,10 @@
 
 $modules = [
     'dashboard' => ['view'],
-    'invoices' => ['view', 'create', 'pay', 'void'],
-    'delivery_notes' => ['view', 'create', 'update', 'pay', 'void'],
-    'quotes' => ['view', 'create', 'update'],
-    'proformas' => ['view', 'create', 'pay'],
+    'invoices' => ['view', 'create', 'pay', 'void', 'delete'],
+    'delivery_notes' => ['view', 'create', 'update', 'pay', 'void', 'delete'],
+    'quotes' => ['view', 'create', 'update', 'delete'],
+    'proformas' => ['view', 'create', 'pay', 'delete'],
     'payments' => ['view'],
     'customers' => ['view', 'create', 'update', 'delete'],
     'suppliers' => ['view', 'create', 'update', 'delete'],

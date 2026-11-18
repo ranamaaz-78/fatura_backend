@@ -88,6 +88,7 @@ class AlbaranInvoicer
                 'client_nif' => $document->client_nif,
                 'client_nie' => $document->client_nie,
                 'client_address' => $document->client_address,
+                'client_email' => $document->client_email,
                 'discount_type' => $document->discount_type,
                 'discount_value' => $document->discount_type === 'amount' ? (int) round($document->discount_value) : $document->discount_value,
                 'lines' => $lines,

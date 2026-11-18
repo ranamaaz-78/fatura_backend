@@ -35,6 +35,7 @@ class SupplierController extends Controller
                     $inner->where('name', 'like', $like)
                         ->orWhere('company_name', 'like', $like)
                         ->orWhere('phone', 'like', $like)
+                        ->orWhere('email', 'like', $like)
                         ->orWhere('nif', 'like', $like)
                         ->orWhere('nie', 'like', $like)
                         ->orWhere('code', 'like', $like);
@@ -98,13 +99,17 @@ class SupplierController extends Controller
             'name' => ['required', 'string', 'max:180'],
             'company_name' => ['nullable', 'string', 'max:180'],
             'phone' => ['nullable', 'string', 'max:40'],
+            'email' => ['nullable', 'email:rfc', 'max:190'],
             'nif' => ['nullable', 'string', 'max:32'],
             'nie' => ['nullable', 'string', 'max:32'],
         ]);
 
-        foreach (['company_name', 'phone', 'nif', 'nie'] as $field) {
+        foreach (['company_name', 'phone', 'email', 'nif', 'nie'] as $field) {
             $data[$field] = ($data[$field] ?? '') !== '' ? $data[$field] : null;
         }
+
+        // An email is kept in small letters, however it was typed.
+        $data['email'] = $data['email'] === null ? null : strtolower(trim($data['email']));
 
         return $data;
     }

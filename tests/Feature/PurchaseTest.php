@@ -273,4 +273,77 @@ class PurchaseTest extends TestCase
         $this->actingAs($manager, 'sanctum')->postJson('/api/app/purchases', $this->payload($line))->assertCreated();
         $this->postJson("/api/app/purchases/{$id}/void", ['reason' => 'Mistake'])->assertOk();
     }
+
+    public function test_the_selling_price_can_be_changed_together_with_the_buying_price(): void
+    {
+        $product = $this->product(['buying_price' => 500, 'selling_price' => 900]);
+        $same = $this->product(['buying_price' => 300, 'selling_price' => 700]);
+
+        $this->actingAs($this->owner, 'sanctum')->postJson('/api/app/purchases', $this->payload([
+            ['product_id' => $product->id, 'quantity' => 2, 'unit_cost' => 600, 'selling_price' => 1100],
+            ['product_id' => $same->id, 'quantity' => 1, 'unit_cost' => 350],
+        ]))->assertCreated();
+
+        $product->refresh();
+        $this->assertSame(600, (int) $product->buying_price);
+        $this->assertSame(500, (int) $product->last_buying_price);
+        $this->assertSame(1100, (int) $product->selling_price, 'the new selling price');
+        $this->assertEqualsWithDelta(83.3, (float) $product->margin_percent, 0.1, 'the margin follows the new prices');
+
+        // Nothing typed for the selling price: it is left exactly as it was.
+        $this->assertSame(700, (int) $same->fresh()->selling_price);
+        $this->assertSame(350, (int) $same->fresh()->buying_price);
+
+        $this->postJson('/api/app/purchases', $this->payload([['product_id' => $product->id, 'quantity' => 1, 'unit_cost' => 600, 'selling_price' => -5]]))->assertStatus(422);
+    }
+
+    public function test_iva_excluded_is_added_on_top_and_the_ledger_owes_the_total_with_iva(): void
+    {
+        $product = $this->product(['quantity' => 0]);
+
+        // A bill of 280.00 before IVA at 21%: 58.80 of IVA, 338.80 to pay.
+        $response = $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/purchases', $this->payload([['product_id' => $product->id, 'quantity' => 4, 'unit_cost' => 7000]], ['iva_mode' => 'excluded', 'iva_percent' => 21]))
+            ->assertCreated()
+            ->assertJsonPath('data.iva_mode', 'excluded')
+            ->assertJsonPath('data.base_cents', 28000)
+            ->assertJsonPath('data.iva_cents', 5880)
+            ->assertJsonPath('data.total_cents', 33880);
+
+        $this->assertDatabaseHas('supplier_bills', ['purchase_id' => $response->json('data.id'), 'amount_cents' => 33880]);
+        // The product's cost is the price typed (it was without IVA).
+        $this->assertSame(7000, $product->fresh()->buying_price);
+    }
+
+    public function test_iva_included_is_taken_out_of_the_total_and_the_product_cost_is_without_it(): void
+    {
+        $product = $this->product(['quantity' => 0]);
+
+        // 4 pieces at 70.00 with the 21% already in: the bill is 280.00 = 231.40 + 48.60.
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/purchases', $this->payload([['product_id' => $product->id, 'quantity' => 4, 'unit_cost' => 7000]], ['iva_mode' => 'included', 'iva_percent' => 21]))
+            ->assertCreated()
+            ->assertJsonPath('data.base_cents', 23140)
+            ->assertJsonPath('data.iva_cents', 4860)
+            ->assertJsonPath('data.total_cents', 28000);
+
+        $this->assertSame(5785, $product->fresh()->buying_price, '70.00 / 1.21');
+    }
+
+    public function test_without_iva_nothing_changes_and_a_percentage_is_needed_when_a_mode_is_chosen(): void
+    {
+        $product = $this->product();
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/purchases', $this->payload([['product_id' => $product->id, 'quantity' => 2, 'unit_cost' => 500]]))
+            ->assertCreated()
+            ->assertJsonPath('data.iva_mode', 'none')
+            ->assertJsonPath('data.iva_cents', 0)
+            ->assertJsonPath('data.total_cents', 1000);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/purchases', $this->payload([['product_id' => $product->id, 'quantity' => 2, 'unit_cost' => 500]], ['iva_mode' => 'excluded']))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('iva_percent');
+    }
 }

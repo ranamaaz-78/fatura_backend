@@ -47,8 +47,10 @@ class InvoiceVerificationController extends Controller
             'issued_at' => $invoice->issued_at?->toIso8601String(),
             'total_cents' => (int) $invoice->total_cents,
             'currency' => $company?->currency,
-            'voided' => $invoice->voided_at !== null,
-            'voided_at' => $invoice->voided_at?->toIso8601String(),
+            // A deleted invoice reads as cancelled: its code is no longer a valid proof.
+            'voided' => $invoice->voided_at !== null || $invoice->trashed(),
+            'deleted' => $invoice->trashed(),
+            'voided_at' => ($invoice->voided_at ?? $invoice->deleted_at)?->toIso8601String(),
             'company' => [
                 'name' => $company?->name,
                 'tax_id' => $company?->tax_id,
@@ -66,6 +68,11 @@ class InvoiceVerificationController extends Controller
         $invoice = $this->find($code);
 
         if ($invoice === null) {
+            return $this->error(__('We could not find an invoice for this code.'), 404);
+        }
+
+        // A deleted invoice is not shown as printed any more.
+        if ($invoice->trashed()) {
             return $this->error(__('We could not find an invoice for this code.'), 404);
         }
 

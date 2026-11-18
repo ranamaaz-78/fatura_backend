@@ -9,11 +9,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
 class SalesDocument extends Model
 {
-    use BelongsToCompany, HasFactory;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     // abono is closed to new documents. Rows issued before proforma existed still load.
     public const TYPES = ['factura', 'albaran', 'quotation', 'proforma', 'abono'];
@@ -38,6 +39,8 @@ class SalesDocument extends Model
         'voided_at',
         'void_reason',
         'voided_by',
+        'deleted_by',
+        'deleted_source_id',
         'converted_to_id',
         'converted_at',
         'client_code',
@@ -47,6 +50,7 @@ class SalesDocument extends Model
         'client_nif',
         'client_nie',
         'client_address',
+        'client_email',
         'notes',
         'base_cents',
         'tax_cents',
@@ -85,6 +89,12 @@ class SalesDocument extends Model
     protected function clientAddress(): Attribute
     {
         return Attribute::set(fn (?string $value) => Text::proper($value));
+    }
+
+    /** Who deleted it (while it is in the Deleted list). */
+    public function deleter(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deleted_by');
     }
 
     public function customer(): BelongsTo
@@ -268,6 +278,56 @@ class SalesDocument extends Model
             && ! $this->isVoided();
     }
 
+    /**
+     * Why this document cannot be deleted, or null when it can. A document is deleted only while nothing has happened
+     * to it that must stay on the books: never once it is paid (a paid invoice or delivery note is voided instead),
+     * never a voided one, and never one another document still stands on.
+     */
+    public function deleteBlockedReason(): ?string
+    {
+        if ($this->trashed()) {
+            return __('This document was already deleted.');
+        }
+
+        if ($this->type === 'abono') {
+            return __('A credit note cannot be deleted.');
+        }
+
+        if ($this->isVoided()) {
+            return __('A voided document is kept as a record and cannot be deleted.');
+        }
+
+        if ($this->type === 'factura' && $this->from_settlement_id !== null) {
+            return __('An invoice made from a proforma payment cannot be deleted.');
+        }
+
+        if ($this->type === 'proforma') {
+            // A proforma is settled piece by piece: any payment or return is already a record.
+            if ($this->payment_status !== 'pending' || (int) $this->returned_cents > 0 || ($this->relationLoaded('settlements') ? $this->settlements->isNotEmpty() : $this->settlements()->exists())) {
+                return __('A proforma with payments or returns cannot be deleted.');
+            }
+        } elseif ($this->payment_status !== 'pending') {
+            return $this->type === 'albaran'
+                ? __('A paid delivery note cannot be deleted. Void it instead.')
+                : __('A paid invoice cannot be deleted. Void it instead.');
+        }
+
+        if ($this->type === 'albaran' && ! $this->canInvoice()) {
+            return __('This delivery note already has an invoice. Delete the invoice first.');
+        }
+
+        if ($this->type === 'quotation' && $this->isConverted() && $this->convertedTo()->exists()) {
+            return __('A document was made from this quotation. Delete that document first.');
+        }
+
+        return null;
+    }
+
+    public function canDelete(): bool
+    {
+        return $this->deleteBlockedReason() === null;
+    }
+
     public function isConverted(): bool
     {
         return $this->converted_at !== null;
@@ -324,6 +384,7 @@ class SalesDocument extends Model
             'issued_at' => 'datetime',
             'expires_at' => 'datetime',
             'voided_at' => 'datetime',
+            'deleted_at' => 'datetime',
             'converted_at' => 'datetime',
             'base_cents' => 'integer',
             'tax_cents' => 'integer',

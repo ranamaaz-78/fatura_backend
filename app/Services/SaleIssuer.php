@@ -51,6 +51,7 @@ class SaleIssuer
                 'client_nif' => ($input['client_nif'] ?? '') !== '' ? $input['client_nif'] : null,
                 'client_nie' => ($input['client_nie'] ?? '') !== '' ? $input['client_nie'] : null,
                 'client_address' => ($input['client_address'] ?? '') !== '' ? $input['client_address'] : null,
+                'client_email' => ($input['client_email'] ?? '') !== '' ? strtolower(trim($input['client_email'])) : null,
                 // Stamped from Printables, never typed on the document. It keeps the note it was issued with.
                 'notes' => PrintTemplate::notesFor($companyId, $input['type']),
                 'base_cents' => $baseCents,
@@ -123,6 +124,7 @@ class SaleIssuer
                 'client_nif' => ($input['client_nif'] ?? '') !== '' ? $input['client_nif'] : null,
                 'client_nie' => ($input['client_nie'] ?? '') !== '' ? $input['client_nie'] : $document->client_nie,
                 'client_address' => ($input['client_address'] ?? '') !== '' ? $input['client_address'] : null,
+                'client_email' => ($input['client_email'] ?? '') !== '' ? strtolower(trim($input['client_email'])) : null,
                 // The note the document was issued with stays as it is; only Printables sets notes.
                 'base_cents' => $baseCents,
                 'tax_cents' => $taxCents,
@@ -194,6 +196,7 @@ class SaleIssuer
                 'client_nif' => $document->client_nif,
                 'client_nie' => $document->client_nie,
                 'client_address' => $document->client_address,
+                'client_email' => $document->client_email,
                 // The new document takes the note of its own type from Printables.
                 'notes' => null,
                 // Carried as the rate the quote had, even if it has since left Settings.
@@ -337,6 +340,7 @@ class SaleIssuer
                 'nif' => ($input['client_nif'] ?? '') !== '' ? $input['client_nif'] : null,
                 'nie' => ($input['client_nie'] ?? '') !== '' ? $input['client_nie'] : $customer->nie,
                 'address' => ($input['client_address'] ?? '') !== '' ? $input['client_address'] : null,
+                'email' => ($input['client_email'] ?? '') !== '' ? strtolower(trim($input['client_email'])) : null,
             ]);
 
             return $customer;
@@ -355,6 +359,7 @@ class SaleIssuer
             'nif' => ($input['client_nif'] ?? '') !== '' ? $input['client_nif'] : null,
             'nie' => ($input['client_nie'] ?? '') !== '' ? $input['client_nie'] : null,
             'address' => ($input['client_address'] ?? '') !== '' ? $input['client_address'] : null,
+            'email' => ($input['client_email'] ?? '') !== '' ? strtolower(trim($input['client_email'])) : null,
         ]);
     }
 

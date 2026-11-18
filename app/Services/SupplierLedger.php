@@ -3,12 +3,14 @@
 namespace App\Services;
 
 use App\Models\CompanyPaymentMethod;
+use App\Models\Purchase;
 use App\Models\Supplier;
 use App\Models\SupplierBill;
 use App\Models\SupplierBillPayment;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -56,6 +58,60 @@ class SupplierLedger
 
             return $bill->fresh(['payments.paymentMethod', 'creator:id,name']);
         });
+    }
+
+    /**
+     * Writes a purchase down in the ledger: the same supplier, the date of the purchase, what came in (in words) and
+     * what it cost. Nothing is paid yet; the payments are written in Supplier Payments afterwards. A purchase that
+     * costs nothing, or has no supplier, writes nothing, and one that already has its entry is not written twice.
+     */
+    public function writeDownPurchase(Purchase $purchase): ?SupplierBill
+    {
+        if ((int) $purchase->total_cents < 1 || $purchase->supplier_id === null) {
+            return null;
+        }
+
+        if (SupplierBill::withoutGlobalScopes()->where('purchase_id', $purchase->id)->exists()) {
+            return null;
+        }
+
+        $purchase->loadMissing('lines');
+        $items = $purchase->lines->map(fn ($line) => $line->article.' x'.$line->quantity)->implode(', ');
+        $date = Carbon::parse($purchase->purchased_on);
+
+        return SupplierBill::create([
+            'company_id' => $purchase->company_id,
+            'supplier_id' => $purchase->supplier_id,
+            'purchase_id' => $purchase->id,
+            'supplier_name' => $purchase->supplier_name,
+            'number' => $this->numbers->take((int) $purchase->company_id, 'supplier_bill', (int) $date->format('Ym')),
+            'bill_date' => $date->toDateString(),
+            'description' => Str::limit(__('Purchase :number', ['number' => $purchase->number]).': '.$items, 500, '…'),
+            'reference' => $purchase->supplier_invoice_no,
+            'notes' => $purchase->notes,
+            'amount_cents' => (int) $purchase->total_cents,
+            'paid_cents' => 0,
+            'created_by' => $purchase->created_by,
+        ]);
+    }
+
+    /** After a purchase was changed (nothing paid yet): its entry takes the new supplier, date, words and total. */
+    public function rewritePurchaseEntry(SupplierBill $entry, Purchase $purchase): SupplierBill
+    {
+        $purchase->loadMissing('lines');
+        $items = $purchase->lines->map(fn ($line) => $line->article.' x'.$line->quantity)->implode(', ');
+
+        $entry->update([
+            'supplier_id' => $purchase->supplier_id,
+            'supplier_name' => $purchase->supplier_name,
+            'bill_date' => Carbon::parse($purchase->purchased_on)->toDateString(),
+            'description' => Str::limit(__('Purchase :number', ['number' => $purchase->number]).': '.$items, 500, '…'),
+            'reference' => $purchase->supplier_invoice_no,
+            'notes' => $purchase->notes,
+            'amount_cents' => (int) $purchase->total_cents,
+        ]);
+
+        return $entry;
     }
 
     /**

@@ -26,6 +26,7 @@ class ReportController extends Controller
         'sales',
         'tax',
         'products',
+        'sold',
         'outstanding',
         'payments',
         'stock',
@@ -54,6 +55,7 @@ class ReportController extends Controller
             'sales' => $this->sales($range),
             'tax' => $this->tax($range),
             'products' => $this->products($range),
+            'sold' => $this->sold($range),
             'outstanding' => $this->outstanding($range),
             'payments' => $this->payments($range),
             'stock' => $this->stock(),
@@ -274,6 +276,57 @@ class ReportController extends Controller
             'kpis' => [
                 'product_count' => $rows->count(),
                 'quantity' => (int) $rows->sum('quantity'),
+                'total_cents' => (int) $rows->sum('total_cents'),
+            ],
+            'rows' => $rows->all(),
+        ];
+    }
+
+    /**
+     * Every product that was sold in the period, one row each: barcode, name, brand, how many went, on how many
+     * documents, the average price, what it came to, and how many are left in stock now.
+     *
+     * @param  array{0: CarbonInterface, 1: CarbonInterface}|null  $range
+     * @return array<string, mixed>
+     */
+    private function sold(?array $range): array
+    {
+        $rows = $this->saleDocuments($range)
+            ->join('sales_document_lines', 'sales_document_lines.sales_document_id', '=', 'sales_documents.id')
+            ->leftJoin('products', 'products.id', '=', 'sales_document_lines.product_id')
+            ->selectRaw('sales_document_lines.product_id')
+            ->selectRaw('sales_document_lines.article')
+            ->selectRaw('MAX(products.barcode) as barcode')
+            ->selectRaw('MAX(products.brand) as brand')
+            ->selectRaw('MAX(products.quantity) as stock')
+            ->selectRaw('SUM(sales_document_lines.quantity) as quantity')
+            ->selectRaw('COUNT(DISTINCT sales_documents.id) as document_count')
+            ->selectRaw('COALESCE(SUM(sales_document_lines.base_cents), 0) as base_cents')
+            ->selectRaw('COALESCE(SUM(sales_document_lines.total_cents), 0) as total_cents')
+            ->groupBy('sales_document_lines.product_id', 'sales_document_lines.article')
+            ->orderByDesc('quantity')
+            ->orderByDesc('total_cents')
+            ->get()
+            ->map(fn ($row) => [
+                'product_id' => $row->product_id === null ? null : (int) $row->product_id,
+                'barcode' => $row->barcode === null ? null : (string) $row->barcode,
+                'article' => (string) $row->article,
+                'brand' => $row->brand === null ? null : (string) $row->brand,
+                'quantity' => (int) $row->quantity,
+                'document_count' => (int) $row->document_count,
+                // What one piece went for on average, tax included.
+                'avg_price_cents' => (int) $row->quantity > 0 ? (int) round((int) $row->total_cents / (int) $row->quantity) : 0,
+                'base_cents' => (int) $row->base_cents,
+                'total_cents' => (int) $row->total_cents,
+                // Null when the product has since been deleted.
+                'stock' => $row->stock === null ? null : (int) $row->stock,
+            ]);
+
+        return [
+            'kpis' => [
+                'product_count' => $rows->count(),
+                'quantity' => (int) $rows->sum('quantity'),
+                'base_cents' => (int) $rows->sum('base_cents'),
                 'total_cents' => (int) $rows->sum('total_cents'),
             ],
             'rows' => $rows->all(),

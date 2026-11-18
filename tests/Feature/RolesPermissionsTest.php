@@ -74,9 +74,9 @@ class RolesPermissionsTest extends TestCase
     {
         $this->actingAs($this->owner, 'sanctum')->getJson('/api/app/team')
             ->assertOk()
-            ->assertJsonPath('data.catalogue.modules.invoices', ['view', 'create', 'pay', 'void'])
-            ->assertJsonPath('data.catalogue.modules.quotes', ['view', 'create', 'update'])
-            ->assertJsonPath('data.catalogue.modules.proformas', ['view', 'create', 'pay'])
+            ->assertJsonPath('data.catalogue.modules.invoices', ['view', 'create', 'pay', 'void', 'delete'])
+            ->assertJsonPath('data.catalogue.modules.quotes', ['view', 'create', 'update', 'delete'])
+            ->assertJsonPath('data.catalogue.modules.proformas', ['view', 'create', 'pay', 'delete'])
             ->assertJsonStructure(['data' => ['catalogue' => ['presets' => ['manager', 'cashier', 'accountant']], 'members']]);
 
         $cashier = $this->member('cashier');
@@ -346,12 +346,13 @@ class RolesPermissionsTest extends TestCase
         // while it is unpaid.
         foreach (['invoices', 'proformas'] as $area) {
             $this->assertNotContains('update', $modules[$area], $area);
-            $this->assertNotContains('delete', $modules[$area], $area);
         }
         $this->assertContains('update', $modules['quotes']);
         $this->assertContains('update', $modules['delivery_notes']);
-        $this->assertNotContains('delete', $modules['delivery_notes']);
-        $this->assertNotContains('delete', $modules['quotes']);
+        // Deleting (never once paid) is its own tick on the four document kinds.
+        foreach (['invoices', 'delivery_notes', 'quotes', 'proformas'] as $area) {
+            $this->assertContains('delete', $modules[$area], $area);
+        }
         $this->assertNotContains('void', $modules['proformas']);
         // Pages that only show things have nothing to tick but "view".
         foreach (['dashboard', 'payments', 'reports'] as $area) {
@@ -361,7 +362,7 @@ class RolesPermissionsTest extends TestCase
         $this->assertSame(['view', 'create', 'void'], $modules['stock']);
 
         $this->assertEqualsCanonicalizing(
-            ['invoices.view', 'invoices.pay', 'invoices.void', 'delivery_notes.pay', 'proformas.pay'],
+            ['invoices.view', 'invoices.pay', 'invoices.void', 'delivery_notes.pay', 'proformas.pay', 'quotes.delete'],
             Permissions::migrateLegacy(['invoices.view', 'invoices.update', 'invoices.delete', 'delivery_notes.update', 'proformas.update', 'quotes.delete', 'stock.delete']),
         );
         $this->assertEqualsCanonicalizing(['invoices.pay', 'delivery_notes.pay', 'proformas.pay'], Permissions::migrateLegacy(['payments.update']));

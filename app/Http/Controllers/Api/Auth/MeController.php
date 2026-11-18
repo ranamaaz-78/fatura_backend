@@ -34,6 +34,8 @@ class MeController extends Controller
             'demo_enabled' => app(DemoSwitch::class)->enabled(),
             'company' => $company ? new CompanyResource($company) : null,
             'subscription' => $subscription ? new SubscriptionResource($subscription) : null,
+            // After how many minutes without activity the server signs this person out: the screen counts the same time.
+            'idle_minutes' => (int) config('fatura.session.idle_minutes', 30),
             'support' => [
                 'email' => config('fatura.support.email'),
                 'whatsapp' => config('fatura.support.whatsapp'),

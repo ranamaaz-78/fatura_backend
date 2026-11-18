@@ -4,6 +4,11 @@ return [
 
     'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
 
+    // How long someone may do nothing before they are signed out (minutes). 0 switches it off.
+    'session' => [
+        'idle_minutes' => (int) env('SESSION_IDLE_MINUTES', 30),
+    ],
+
     'support' => [
         'email' => env('SUPPORT_EMAIL', 'info@ykdigitalsolutions.com'),
         'whatsapp' => env('SUPPORT_WHATSAPP', '+34678708084'),

@@ -23,6 +23,7 @@ class Customer extends Model
         'name',
         'company_name',
         'phone',
+        'email',
         'nif',
         'nie',
         'address',

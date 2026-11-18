@@ -29,7 +29,7 @@ class ApplicationController extends Controller
         $filters = $request->validate([
             'status' => ['nullable', Rule::in(ApplicationStatus::values())],
             'search' => ['nullable', 'string', 'max:120'],
-            'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:1000'],
         ]);
 
         $applications = Application::query()

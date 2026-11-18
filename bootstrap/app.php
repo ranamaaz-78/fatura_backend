@@ -5,6 +5,7 @@ use App\Http\Middleware\EnsureCompanySetup;
 use App\Http\Middleware\EnsurePermission;
 use App\Http\Middleware\DemoCap;
 use App\Http\Middleware\EnsureRole;
+use App\Http\Middleware\ExpireIdleToken;
 use App\Http\Middleware\NotInDemo;
 use App\Http\Middleware\SetLocale;
 use Illuminate\Auth\AuthenticationException;
@@ -25,6 +26,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // Global, so it runs before the route's auth middleware and even an "Unauthenticated." answer speaks the right language.
         $middleware->prepend(SetLocale::class);
+
+        // Even before that: a token idle for 30 minutes is deleted (see ExpireIdleToken for why it must be first).
+        $middleware->prepend(ExpireIdleToken::class);
 
         $middleware->alias([
             'role' => EnsureRole::class,

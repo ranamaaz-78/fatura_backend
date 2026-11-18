@@ -104,6 +104,46 @@ class ReportTest extends TestCase
             ->assertJsonPath('data.rows.0.quantity', 3);
     }
 
+    public function test_products_sold_lists_every_product_with_barcode_brand_average_and_stock_left(): void
+    {
+        $shirt = Product::factory()->create(['company_id' => $this->company->id, 'article' => 'Cotton shirt', 'barcode' => '8431234567893', 'brand' => 'Levis', 'quantity' => 20]);
+        $hat = Product::factory()->create(['company_id' => $this->company->id, 'article' => 'Straw hat', 'barcode' => '8431234567800', 'brand' => null, 'quantity' => 5]);
+        $unsold = Product::factory()->create(['company_id' => $this->company->id, 'article' => 'Never sold', 'quantity' => 9]);
+
+        $line = fn (Product $product, int $quantity) => [
+            'product_id' => $product->id,
+            'article' => $product->article,
+            'quantity' => $quantity,
+            'unit_price' => 1000,
+            'discount_percent' => 0,
+            'iva_percent' => 21,
+        ];
+        $this->issuePaid('factura', 'Adeel', ['lines' => [$line($shirt, 3), $line($hat, 1)]]);
+        $this->issuePaid('factura', 'Goppal', ['lines' => [$line($shirt, 2)]]);
+
+        $report = $this->actingAs($this->owner, 'sanctum')->getJson('/api/app/reports/sold')->assertOk();
+
+        $report->assertJsonPath('data.kind', 'sold')
+            ->assertJsonPath('data.kpis.product_count', 2)
+            ->assertJsonPath('data.kpis.quantity', 6);
+
+        $rows = collect($report->json('data.rows'))->keyBy('article');
+        $this->assertSame(['Cotton shirt', 'Straw hat'], $rows->keys()->all(), 'most pieces first, and what never sold is not there');
+        $this->assertSame('8431234567893', $rows['Cotton shirt']['barcode']);
+        $this->assertSame('Levis', $rows['Cotton shirt']['brand']);
+        $this->assertSame(5, $rows['Cotton shirt']['quantity']);
+        $this->assertSame(2, $rows['Cotton shirt']['document_count']);
+        $this->assertSame(1210, $rows['Cotton shirt']['avg_price_cents'], '1 000 + 21 % tax per piece');
+        $this->assertSame(6050, $rows['Cotton shirt']['total_cents']);
+        $this->assertSame(15, $rows['Cotton shirt']['stock'], '20 in stock, 5 sold');
+        $this->assertNull($rows['Straw hat']['brand']);
+        $this->assertNotContains('Never sold', $rows->keys()->all());
+        $this->assertSame(9, $unsold->fresh()->quantity);
+
+        // A voided document sells nothing.
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/app/reports/sold?period=custom&from=2000-01-01&to=2000-01-31')->assertOk()->assertJsonPath('data.kpis.product_count', 0);
+    }
+
     public function test_outstanding_lists_open_documents(): void
     {
         $this->issuePaid('factura', 'Adeel');

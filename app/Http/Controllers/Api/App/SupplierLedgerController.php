@@ -31,7 +31,7 @@ class SupplierLedgerController extends Controller
             'to' => ['nullable', 'date'],
             'status' => ['nullable', Rule::in(['all', 'active', 'voided'])],
             'payment' => ['nullable', Rule::in(['all', 'unpaid', 'partial', 'paid'])],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:1000'],
         ]);
 
         $query = SupplierBill::query()
@@ -60,6 +60,7 @@ class SupplierLedgerController extends Controller
             });
 
         $page = (clone $query)
+            ->with('purchase:id,number,iva_mode,iva_percent,base_cents,iva_cents')
             ->withCount('payments')
             ->withMax('payments', 'paid_on')
             ->orderByDesc('bill_date')
@@ -92,7 +93,7 @@ class SupplierLedgerController extends Controller
 
     public function show(SupplierBill $bill): JsonResponse
     {
-        return $this->success(new SupplierBillResource($bill->load(['payments.paymentMethod', 'payments.author:id,name', 'creator:id,name'])));
+        return $this->success(new SupplierBillResource($bill->load(['payments.paymentMethod', 'payments.author:id,name', 'creator:id,name', 'purchase:id,number,iva_mode,iva_percent,base_cents,iva_cents'])));
     }
 
     public function store(Request $request): JsonResponse
@@ -194,7 +195,7 @@ class SupplierLedgerController extends Controller
         $bills = SupplierBill::query()
             ->where('supplier_id', $supplier->id)
             ->whereNull('voided_at')
-            ->with(['payments.paymentMethod'])
+            ->with(['payments.paymentMethod', 'purchase:id,number,iva_mode,iva_percent,base_cents,iva_cents'])
             ->orderBy('bill_date')
             ->orderBy('id')
             ->limit(2000)
@@ -203,10 +204,10 @@ class SupplierLedgerController extends Controller
         // Every movement of the account: a purchase is "bought", a payment is "paid".
         $moves = [];
         foreach ($bills as $bill) {
-            $moves[] = ['date' => $bill->bill_date->toDateString(), 'order' => 0, 'id' => $bill->id, 'type' => 'bill', 'number' => $bill->number, 'details' => $bill->description, 'reference' => $bill->reference, 'bought_cents' => (int) $bill->amount_cents, 'paid_cents' => 0];
+            $moves[] = ['date' => $bill->bill_date->toDateString(), 'order' => 0, 'id' => $bill->id, 'type' => 'bill', 'number' => $bill->number, 'details' => $bill->description, 'reference' => $bill->reference, 'bought_cents' => (int) $bill->amount_cents, 'paid_cents' => 0, 'iva_cents' => $this->ivaOf($bill), 'iva_percent' => $this->ivaOf($bill) > 0 ? (float) $bill->purchase->iva_percent : null];
 
             foreach ($bill->payments as $payment) {
-                $moves[] = ['date' => $payment->paid_on->toDateString(), 'order' => 1, 'id' => $payment->id, 'type' => 'payment', 'number' => $bill->number, 'details' => trim(($payment->paymentMethod?->name ?? '').($payment->note ? ' · '.$payment->note : ''), ' ·'), 'reference' => $bill->reference, 'bought_cents' => 0, 'paid_cents' => (int) $payment->amount_cents];
+                $moves[] = ['date' => $payment->paid_on->toDateString(), 'order' => 1, 'id' => $payment->id, 'type' => 'payment', 'number' => $bill->number, 'details' => trim(($payment->paymentMethod?->name ?? '').($payment->note ? ' · '.$payment->note : ''), ' ·'), 'reference' => $bill->reference, 'bought_cents' => 0, 'paid_cents' => (int) $payment->amount_cents, 'iva_cents' => 0, 'iva_percent' => null];
             }
         }
 
@@ -238,11 +239,21 @@ class SupplierLedgerController extends Controller
             'opening_cents' => $opening,
             'bought_cents' => (int) collect($transactions)->sum('bought_cents'),
             'paid_cents' => (int) collect($transactions)->sum('paid_cents'),
+            // The IVA inside what was bought in these dates (from purchases written with IVA).
+            'iva_cents' => (int) collect($transactions)->sum('iva_cents'),
             'closing_cents' => $balance,
             // Whole-history figures, for the cards on the screen (they do not depend on the dates).
             'owed_cents' => (int) $bills->sum(fn (SupplierBill $bill) => $bill->owedCents()),
             'transactions' => $transactions,
             'entries' => SupplierBillResource::collection($bills->sortByDesc('bill_date')->values()),
         ]);
+    }
+
+    /** The IVA inside an entry: only an entry written from a purchase that had IVA has any. */
+    private function ivaOf(SupplierBill $bill): int
+    {
+        $purchase = $bill->purchase;
+
+        return $purchase !== null && ($purchase->iva_mode ?? 'none') !== 'none' ? (int) $purchase->iva_cents : 0;
     }
 }

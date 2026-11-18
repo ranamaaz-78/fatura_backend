@@ -14,6 +14,16 @@ class SupplierBillResource extends JsonResource
             'number' => $this->number,
             'supplier_id' => $this->supplier_id,
             'supplier_name' => $this->supplier_name,
+            // The purchase this entry was written from, if any.
+            'purchase_id' => $this->purchase_id,
+            'purchase_number' => $this->whenLoaded('purchase', fn () => $this->purchase?->number),
+            // The IVA inside the amount, when the entry came from a purchase that had IVA: its rate, its base and the tax.
+            'iva' => $this->whenLoaded('purchase', fn () => $this->purchase !== null && ($this->purchase->iva_mode ?? 'none') !== 'none' && (int) $this->purchase->iva_cents > 0 ? [
+                'mode' => $this->purchase->iva_mode,
+                'percent' => (float) $this->purchase->iva_percent,
+                'base_cents' => (int) $this->purchase->base_cents,
+                'iva_cents' => (int) $this->purchase->iva_cents,
+            ] : null),
             'bill_date' => $this->bill_date?->toDateString(),
             'description' => $this->description,
             'reference' => $this->reference,

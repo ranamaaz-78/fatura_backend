@@ -18,6 +18,7 @@ class SupplierBill extends Model
     protected $fillable = [
         'company_id',
         'supplier_id',
+        'purchase_id',
         'supplier_name',
         'number',
         'bill_date',
@@ -45,6 +46,12 @@ class SupplierBill extends Model
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class);
+    }
+
+    /** The purchase this entry was written from, when it came from one. */
+    public function purchase(): BelongsTo
+    {
+        return $this->belongsTo(Purchase::class);
     }
 
     public function payments(): HasMany

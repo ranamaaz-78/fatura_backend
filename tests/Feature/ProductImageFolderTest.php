@@ -268,6 +268,26 @@ class ProductImageFolderTest extends TestCase
         Storage::disk('local')->assertMissing($image->path);
     }
 
+    public function test_ticked_images_are_deleted_together_with_their_files_and_only_this_companys(): void
+    {
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/product-images', ['files' => [UploadedFile::fake()->image('a.jpg', 40, 40), UploadedFile::fake()->image('b.jpg', 40, 40)]])
+            ->assertCreated();
+        $images = ProductImage::all();
+        $stranger = ProductImage::factory()->create(['company_id' => Company::factory()->create()->id]);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/product-images/bulk-delete', ['uuids' => [...$images->pluck('uuid')->all(), $stranger->uuid]])
+            ->assertOk()
+            ->assertJsonCount(2, 'data.done');
+
+        $this->assertSame(0, ProductImage::count());
+        foreach ($images as $image) {
+            Storage::disk('local')->assertMissing($image->path);
+        }
+        $this->assertNotNull(ProductImage::withoutGlobalScopes()->find($stranger->id), 'another company is untouched');
+    }
+
     public function test_a_large_photo_is_shrunk_to_about_200kb_and_resized(): void
     {
         $upload = $this->busyPhoto('big-photo.jpg', 3000, 2000, 'jpeg');

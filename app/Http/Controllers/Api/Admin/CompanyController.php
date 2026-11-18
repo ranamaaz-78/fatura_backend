@@ -30,7 +30,7 @@ class CompanyController extends Controller
             'status' => ['nullable', Rule::in(CompanyStatus::values())],
             'subscription' => ['nullable', Rule::in(['active', 'expiring', 'expired', 'none'])],
             'search' => ['nullable', 'string', 'max:120'],
-            'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:1000'],
         ]);
 
         $companies = Company::real()

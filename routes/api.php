@@ -143,6 +143,7 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::get('/purchases', [Tenant\PurchaseController::class, 'index'])->middleware('permission:stock.view');
         Route::post('/purchases', [Tenant\PurchaseController::class, 'store'])->middleware('permission:stock.create')->middleware('demo.cap:purchases,80');
         Route::get('/purchases/{purchase}', [Tenant\PurchaseController::class, 'show'])->middleware('permission:stock.view');
+        Route::patch('/purchases/{purchase}', [Tenant\PurchaseController::class, 'update'])->middleware('permission:stock.create');
         Route::post('/purchases/{purchase}/void', [Tenant\PurchaseController::class, 'void'])->middleware('permission:stock.void');
         // The supplier ledger: its own record book, apart from Purchases and the stock.
         Route::get('/ledger', [Tenant\SupplierLedgerController::class, 'index'])->middleware('permission:ledger.view');
@@ -162,7 +163,10 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::get('/sales/preview', [Tenant\SaleController::class, 'preview']);
         Route::get('/sales', [Tenant\SaleController::class, 'index']);
         Route::post('/sales', [Tenant\SaleController::class, 'store'])->middleware('demo.cap:documents,400');
-        Route::get('/sales/{sale}', [Tenant\SaleController::class, 'show']);
+        Route::get('/sales/trash-counts', [Tenant\SaleController::class, 'trashCounts']);
+        Route::post('/sales/bulk-delete', [Tenant\SaleController::class, 'bulkDestroy']);
+        Route::post('/sales/bulk-restore', [Tenant\SaleController::class, 'bulkRestore']);
+        Route::get('/sales/{sale}', [Tenant\SaleController::class, 'show'])->withTrashed();
         Route::patch('/sales/{sale}', [Tenant\SaleController::class, 'update']);
         Route::post('/sales/{sale}/convert', [Tenant\SaleController::class, 'convert']);
         Route::patch('/sales/{sale}/payment', [Tenant\SaleController::class, 'updatePayment']);
@@ -173,9 +177,12 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::delete('/sales/{sale}/returns/{return}', [Tenant\SaleController::class, 'cancelReturn']);
         Route::patch('/sales/{sale}/settlements/{settlement}', [Tenant\SaleController::class, 'updateSettlement']);
         Route::post('/sales/{sale}/void', [Tenant\SaleController::class, 'void']);
+        Route::delete('/sales/{sale}', [Tenant\SaleController::class, 'destroy']);
+        Route::post('/sales/{sale}/restore', [Tenant\SaleController::class, 'restore'])->withTrashed();
 
         Route::get('/product-images', [Tenant\ProductImageController::class, 'index'])->middleware('permission:product_images.view|products.view|invoices.create|delivery_notes.create|quotes.create|proformas.create');
         Route::post('/product-images', [Tenant\ProductImageController::class, 'store'])->middleware('permission:product_images.create')->middleware('not.demo');
+        Route::post('/product-images/bulk-delete', [Tenant\ProductImageController::class, 'bulkDestroy'])->middleware('permission:product_images.delete');
         Route::get('/product-images/{productImage}/file', [Tenant\ProductImageController::class, 'file'])->middleware('permission:product_images.view|products.view|invoices.create|delivery_notes.create|quotes.create|proformas.create');
         Route::post('/product-images/{productImage}/replace', [Tenant\ProductImageController::class, 'replace'])->middleware('permission:product_images.update')->middleware('not.demo');
         Route::patch('/product-images/{productImage}', [Tenant\ProductImageController::class, 'update'])->middleware('permission:product_images.update');
@@ -188,6 +195,7 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::post('/products/import', Tenant\ProductImportController::class)->middleware('permission:products.create')->middleware('not.demo');
         Route::get('/products/{product}', [Tenant\ProductController::class, 'show'])->middleware('permission:products.view|stock.view|invoices.create|delivery_notes.create|quotes.create|proformas.create');
         Route::patch('/products/{product}', [Tenant\ProductController::class, 'update'])->middleware('permission:products.update');
+        Route::post('/products/bulk-delete', [Tenant\ProductController::class, 'bulkDestroy'])->middleware('permission:products.delete');
         Route::delete('/products/{product}', [Tenant\ProductController::class, 'destroy'])->middleware('permission:products.delete');
 
         Route::get('/print-templates', [Tenant\PrintTemplateController::class, 'index'])->middleware('permission:printables.view|invoices.view|delivery_notes.view|quotes.view|proformas.view');

@@ -26,7 +26,7 @@ class PaymentController extends Controller
             'status' => ['nullable', Rule::in(['all', 'received', 'pending', 'partial'])],
             'payment_method_id' => ['nullable', 'string', 'max:20'],
             'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'min:5', 'max:50'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:1000'],
         ]);
 
         $search = $filters['search'] ?? null;

@@ -26,7 +26,7 @@ class ProductController extends Controller
             'search' => ['nullable', 'string', 'max:120'],
             'category_id' => ['nullable', 'integer'],
             'stock' => ['nullable', Rule::in(['all', 'low', 'out', 'no_barcode', 'labels', 'labels_pending', 'labels_printed'])],
-            'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:1000'],
         ]);
 
         $products = Product::query()
@@ -37,6 +37,7 @@ class ProductController extends Controller
                 $query->where(function (Builder $inner) use ($like) {
                     $inner->where('article', 'like', $like)
                         ->orWhere('barcode', 'like', $like)
+                        ->orWhere('short_code', 'like', $like)
                         ->orWhere('brand', 'like', $like);
                 });
             })
@@ -112,6 +113,24 @@ class ProductController extends Controller
         $product->delete();
 
         return $this->success([], __('Product deleted.'));
+    }
+
+    /** Deletes the ticked products in one go. Only this company's products can be reached; the count says how many went. */
+    public function bulkDestroy(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:500'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $deleted = DB::transaction(function () use ($data) {
+            $products = Product::query()->whereIn('id', array_unique($data['ids']))->get();
+            $products->each->delete();
+
+            return $products->count();
+        });
+
+        return $this->success(['deleted' => $deleted], __(':count products deleted.', ['count' => $deleted]));
     }
 
     /**
