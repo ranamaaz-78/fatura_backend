@@ -54,6 +54,36 @@ class SupplierTest extends TestCase
             ->assertJsonPath('data.0.name', 'Acme Parts');
     }
 
+    public function test_a_supplier_keeps_a_private_remark_that_can_be_changed_cleared_and_searched(): void
+    {
+        $id = $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/suppliers', ['name' => 'Acme Parts', 'remarks' => "Delivers on Tuesdays.
+Ask for Marta."])
+            ->assertCreated()
+            ->assertJsonPath('data.remarks', "Delivers on Tuesdays.
+Ask for Marta.")
+            ->json('data.id');
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->getJson('/api/app/suppliers?search=Tuesdays')
+            ->assertOk()
+            ->assertJsonCount(1, 'data');
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->patchJson("/api/app/suppliers/{$id}", ['name' => 'Acme Parts', 'remarks' => 'Pays in 30 days.'])
+            ->assertOk()
+            ->assertJsonPath('data.remarks', 'Pays in 30 days.');
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->patchJson("/api/app/suppliers/{$id}", ['name' => 'Acme Parts', 'remarks' => ''])
+            ->assertOk()
+            ->assertJsonPath('data.remarks', null);
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson('/api/app/suppliers', ['name' => 'Too Much', 'remarks' => str_repeat('x', 2001)])
+            ->assertStatus(422);
+    }
+
     public function test_editing_changes_the_label_and_keeps_the_code(): void
     {
         $id = $this->actingAs($this->owner, 'sanctum')

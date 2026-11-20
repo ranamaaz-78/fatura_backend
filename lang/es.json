@@ -440,5 +440,20 @@
     "Something was already paid for this purchase in Supplier Payments, so it can no longer be changed.": "Ya se pagó algo de esta compra en Pagos a proveedores, así que ya no se puede cambiar.",
     ":article has only :left in stock, so :count pieces cannot be taken off this purchase.": ":article solo tiene :left en stock, así que no se pueden quitar :count piezas de esta compra.",
     "The purchase :number now costs nothing.": "La compra :number ahora no cuesta nada.",
-    "Purchase updated. The stock and Supplier Payments follow the change.": "Compra actualizada. El stock y Pagos a proveedores siguen el cambio."
+    "Purchase updated. The stock and Supplier Payments follow the change.": "Compra actualizada. El stock y Pagos a proveedores siguen el cambio.",
+    "Name is required.": "El nombre es obligatorio.",
+    "Email is not valid.": "El correo electrónico no es válido.",
+    ":field is too long (at most :max characters).": ":field es demasiado largo (máximo :max caracteres).",
+    "This phone number is repeated in the file.": "Este teléfono está repetido en el archivo.",
+    "This phone number is already saved for :name.": "Este teléfono ya está guardado para :name.",
+    "This name is repeated in the file.": "Este nombre está repetido en el archivo.",
+    "A supplier with this name already exists.": "Ya existe un proveedor con este nombre.",
+    "Name": "Nombre",
+    "Company name": "Empresa",
+    "Phone": "Teléfono",
+    "Tax ID": "NIF/NIE",
+    "Address": "Dirección",
+    "Remarks": "Observaciones",
+    "{1} :count client imported.|[2,*] :count clients imported.": "{1} :count cliente importado.|[2,*] :count clientes importados.",
+    "{1} :count supplier imported.|[2,*] :count suppliers imported.": "{1} :count proveedor importado.|[2,*] :count proveedores importados."
 }

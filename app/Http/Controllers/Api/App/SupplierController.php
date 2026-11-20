@@ -38,6 +38,7 @@ class SupplierController extends Controller
                         ->orWhere('email', 'like', $like)
                         ->orWhere('nif', 'like', $like)
                         ->orWhere('nie', 'like', $like)
+                        ->orWhere('remarks', 'like', $like)
                         ->orWhere('code', 'like', $like);
                 });
             })
@@ -102,9 +103,11 @@ class SupplierController extends Controller
             'email' => ['nullable', 'email:rfc', 'max:190'],
             'nif' => ['nullable', 'string', 'max:32'],
             'nie' => ['nullable', 'string', 'max:32'],
+            // A private note: free text, kept exactly as typed.
+            'remarks' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        foreach (['company_name', 'phone', 'email', 'nif', 'nie'] as $field) {
+        foreach (['company_name', 'phone', 'email', 'nif', 'nie', 'remarks'] as $field) {
             $data[$field] = ($data[$field] ?? '') !== '' ? $data[$field] : null;
         }
 

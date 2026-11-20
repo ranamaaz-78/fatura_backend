@@ -18,6 +18,7 @@ class SupplierResource extends JsonResource
             'email' => $this->email,
             'nif' => $this->nif,
             'nie' => $this->nie,
+            'remarks' => $this->remarks,
             'is_active' => $this->is_active,
             'products_count' => $this->whenCounted('products'),
         ];

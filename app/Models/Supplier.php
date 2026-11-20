@@ -24,6 +24,7 @@ class Supplier extends Model
         'email',
         'nif',
         'nie',
+        'remarks',
         'is_active',
     ];
 

@@ -135,6 +135,7 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::delete('/payment-methods/{companyPaymentMethod}', [Tenant\CompanyPaymentMethodController::class, 'destroy'])->middleware('permission:settings.update');
 
         Route::get('/customers', [Tenant\CustomerController::class, 'index'])->middleware('permission:customers.view|invoices.create|delivery_notes.create|quotes.create|proformas.create');
+        Route::post('/customers/import', Tenant\CustomerImportController::class)->middleware('permission:customers.create')->middleware('not.demo');
         Route::post('/customers', [Tenant\CustomerController::class, 'store'])->middleware('permission:customers.create')->middleware('demo.cap:customers,80');
         Route::patch('/customers/{customer}/active', [Tenant\CustomerController::class, 'updateActive'])->middleware('permission:customers.update');
         Route::patch('/customers/{customer}', [Tenant\CustomerController::class, 'update'])->middleware('permission:customers.update');
@@ -155,6 +156,7 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::delete('/ledger/{bill}/payments/{payment}', [Tenant\SupplierLedgerController::class, 'removePayment'])->middleware('permission:ledger.pay');
         Route::post('/ledger/{bill}/void', [Tenant\SupplierLedgerController::class, 'void'])->middleware('permission:ledger.void');
         Route::get('/suppliers', [Tenant\SupplierController::class, 'index'])->middleware('permission:suppliers.view|stock.view');
+        Route::post('/suppliers/import', Tenant\SupplierImportController::class)->middleware('permission:suppliers.create')->middleware('not.demo');
         Route::post('/suppliers', [Tenant\SupplierController::class, 'store'])->middleware('permission:suppliers.create')->middleware('demo.cap:suppliers,40');
         Route::patch('/suppliers/{supplier}/active', [Tenant\SupplierController::class, 'updateActive'])->middleware('permission:suppliers.update');
         Route::patch('/suppliers/{supplier}', [Tenant\SupplierController::class, 'update'])->middleware('permission:suppliers.update');
