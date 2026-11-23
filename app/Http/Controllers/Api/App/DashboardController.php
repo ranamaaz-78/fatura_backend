@@ -29,14 +29,14 @@ class DashboardController extends Controller
         $subscription = $company?->activeSubscription;
         $month = ReportPeriod::range('month', null, null);
 
-        $paidDocuments = (int) SalesDocument::query()
-            ->whereIn('type', ['factura', 'albaran'])
-            ->whereNull('from_settlement_id')
-            ->whereNull('from_document_id')
-            ->where('payment_status', 'paid')
-            ->whereNull('voided_at')->whereNull('draft_at')
-            ->whereBetween('issued_at', $month)
-            ->sum('total_cents');
+        // Paid in the month: a delivery note or invoice at its price, and what an invoice added (IVA, recargo) to a
+        // delivery note that was already paid (see SalesDocument::counted).
+        $paidDocuments = (int) SalesDocument::counted()
+            ->whereIn('sales_documents.type', ['factura', 'albaran'])
+            ->where('sales_documents.payment_status', 'paid')
+            ->whereNull('sales_documents.voided_at')->whereNull('sales_documents.draft_at')
+            ->whereBetween('sales_documents.issued_at', $month)
+            ->sum('sales_documents.total_cents');
 
         $proformaSettlements = (int) SalesDocumentSettlement::query()
             ->whereBetween('created_at', $month)
@@ -142,7 +142,7 @@ class DashboardController extends Controller
             ->map(fn ($row) => $this->documentRow($row, (int) $row->outstanding_cents))
             ->all();
 
-        $margins = $this->saleDocuments($month)
+        $margins = $this->saleDocuments($month, differences: false)
             ->join('sales_document_lines', 'sales_document_lines.sales_document_id', '=', 'sales_documents.id')
             ->leftJoin('products', 'products.id', '=', 'sales_document_lines.product_id')
             ->selectRaw('COALESCE(SUM(sales_document_lines.base_cents), 0) as base_cents')
@@ -209,12 +209,15 @@ class DashboardController extends Controller
     /**
      * @param  array{0: CarbonInterface, 1: CarbonInterface}|null  $range
      */
-    private function saleDocuments(?array $range): Builder
+    /**
+     * @param  bool  $differences  Count the IVA/recargo an invoice added to a paid delivery note (SalesDocument::counted).
+     *                              The margin works line by line, so it leaves them out: the note's lines counted.
+     */
+    private function saleDocuments(?array $range, bool $differences = true): Builder
     {
-        return SalesDocument::query()
+        return SalesDocument::counted()
             ->whereIn('sales_documents.type', self::SALE_TYPES)
-            ->whereNull('sales_documents.from_settlement_id')
-            ->whereNull('sales_documents.from_document_id')
+            ->when(! $differences, fn (Builder $query) => $query->whereNull('sales_documents.from_document_id'))
             ->whereNull('sales_documents.voided_at')->whereNull('sales_documents.draft_at')
             ->when($range !== null, fn (Builder $query) => $query->whereBetween('sales_documents.issued_at', $range));
     }

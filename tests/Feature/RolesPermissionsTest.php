@@ -101,7 +101,7 @@ class RolesPermissionsTest extends TestCase
     {
         $this->actingAs($this->owner, 'sanctum')->getJson('/api/app/team')
             ->assertOk()
-            ->assertJsonPath('data.catalogue.modules.invoices', ['view', 'create', 'pay', 'void', 'delete'])
+            ->assertJsonPath('data.catalogue.modules.invoices', ['view', 'create', 'update', 'pay', 'void', 'delete'])
             ->assertJsonPath('data.catalogue.modules.quotes', ['view', 'create', 'update', 'delete'])
             ->assertJsonPath('data.catalogue.modules.proformas', ['view', 'create', 'pay', 'delete'])
             ->assertJsonStructure(['data' => ['catalogue' => ['presets' => ['manager', 'cashier', 'accountant']], 'members']]);
@@ -414,13 +414,12 @@ class RolesPermissionsTest extends TestCase
     {
         $modules = Permissions::modules();
 
-        // An invoice or proforma cannot be edited once issued; a quotation can while it is open, and a delivery note
-        // while it is unpaid.
-        foreach (['invoices', 'proformas'] as $area) {
-            $this->assertNotContains('update', $modules[$area], $area);
+        // A proforma cannot be edited once issued. A quotation can while it is open, a delivery note and an invoice
+        // while they are unpaid, and a delivery receipt any time.
+        $this->assertNotContains('update', $modules['proformas']);
+        foreach (['quotes', 'delivery_notes', 'invoices', 'delivery_receipts'] as $area) {
+            $this->assertContains('update', $modules[$area], $area);
         }
-        $this->assertContains('update', $modules['quotes']);
-        $this->assertContains('update', $modules['delivery_notes']);
         // Deleting (never once paid) is its own tick on the four document kinds.
         foreach (['invoices', 'delivery_notes', 'quotes', 'proformas'] as $area) {
             $this->assertContains('delete', $modules[$area], $area);

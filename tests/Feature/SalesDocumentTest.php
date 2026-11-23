@@ -573,13 +573,38 @@ class SalesDocumentTest extends TestCase
         $this->assertSame(7, $product->fresh()->quantity);
     }
 
-    public function test_an_invoice_cannot_be_edited(): void
+    public function test_a_pending_invoice_is_edited_with_the_stock_adjusted_and_a_paid_one_is_not(): void
     {
-        $id = $this->issue('factura')->json('data.id');
+        $product = Product::factory()->create(['company_id' => $this->company->id, 'quantity' => 10]);
+        $created = $this->issue('factura', $product, 3)->assertCreated();
+        $id = $created->json('data.id');
+        $this->assertSame(7, $product->fresh()->quantity);
 
+        $lines = [[
+            'product_id' => $product->id, 'article' => $product->article, 'quantity' => 5,
+            'unit_price' => 1000, 'discount_percent' => 0, 'iva_percent' => 21,
+        ]];
+
+        // Pending: edited, the number and date stay, and only the difference leaves the shelf (3 back, 5 out).
         $this->actingAs($this->owner, 'sanctum')
-            ->patchJson("/api/app/sales/{$id}", $this->payload('factura'))
-            ->assertStatus(422);
+            ->patchJson("/api/app/sales/{$id}", $this->payload('factura', $lines))
+            ->assertOk()
+            ->assertJsonPath('data.number', $created->json('data.number'))
+            ->assertJsonPath('data.issued_at', $created->json('data.issued_at'))
+            ->assertJsonPath('data.lines.0.quantity', 5)
+            ->assertJsonPath('data.base_cents', 5000);
+        $this->assertSame(5, $product->fresh()->quantity);
+
+        // More than the shelf holds is refused and nothing moves.
+        $tooMany = [array_merge($lines[0], ['quantity' => 99])];
+        $this->actingAs($this->owner, 'sanctum')->patchJson("/api/app/sales/{$id}", $this->payload('factura', $tooMany))->assertStatus(422);
+        $this->assertSame(5, $product->fresh()->quantity);
+
+        // Paid: no longer edited.
+        $cash = (int) \App\Models\CompanyPaymentMethod::withoutGlobalScopes()->where('company_id', $this->company->id)->where('name', 'Cash')->value('id');
+        $this->actingAs($this->owner, 'sanctum')->patchJson("/api/app/sales/{$id}/payment", ['payment_status' => 'paid', 'payment_method_id' => $cash])->assertOk();
+        $this->actingAs($this->owner, 'sanctum')->patchJson("/api/app/sales/{$id}", $this->payload('factura', $lines))->assertStatus(422);
+        $this->actingAs($this->owner, 'sanctum')->getJson("/api/app/sales/{$id}")->assertJsonPath('data.can_edit', false);
     }
 
     public function test_converting_a_quote_to_an_invoice_takes_stock_and_hides_the_quote(): void

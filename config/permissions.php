@@ -13,12 +13,13 @@
 
 $modules = [
     'dashboard' => ['view'],
-    'invoices' => ['view', 'create', 'pay', 'void', 'delete'],
+    // An invoice can be edited while it is still pending (unpaid): "update". Once paid it can only be voided.
+    'invoices' => ['view', 'create', 'update', 'pay', 'void', 'delete'],
     'delivery_notes' => ['view', 'create', 'update', 'pay', 'void', 'delete'],
     'quotes' => ['view', 'create', 'update', 'delete'],
     'proformas' => ['view', 'create', 'pay', 'delete'],
-    // A delivery receipt is issued and kept, or deleted while nothing stands on it: no edit, payment or void.
-    'delivery_receipts' => ['view', 'create', 'delete'],
+    // A delivery receipt can be corrected any time (it takes no payment) or deleted: no payment or void.
+    'delivery_receipts' => ['view', 'create', 'update', 'delete'],
     'payments' => ['view'],
     'customers' => ['view', 'create', 'update', 'delete'],
     'suppliers' => ['view', 'create', 'update', 'delete'],

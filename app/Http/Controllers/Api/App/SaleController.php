@@ -220,7 +220,12 @@ class SaleController extends Controller
         // falling back to "view" would let a read-only member rewrite it).
         $this->allow($request, $sale->type, $sale->isDraft() ? 'create' : 'update');
 
-        $data = $request->validate($this->documentRules(forUpdate: true));
+        $rules = $this->documentRules(forUpdate: true);
+        // A delivery receipt names no client.
+        if (! SalesDocument::hasClient($sale->type)) {
+            $rules['client_name'] = ['nullable', 'string', 'max:180'];
+        }
+        $data = $request->validate($rules);
         $data['issued_at'] = IssueDate::stored(IssueDate::parse($data['issued_at']));
         $data['save_customer'] = (bool) ($data['save_customer'] ?? false);
 
@@ -353,9 +358,26 @@ class SaleController extends Controller
             'iva.*' => ['nullable', 'numeric', 'min:0', 'max:100'],
             // A rate from Settings: recargo de equivalencia is added to the invoice.
             'recargo_rate_id' => ['nullable', 'integer'],
+            // Client details the delivery note lacks. Ones it already has are never replaced (see AlbaranInvoicer).
+            'client_company' => ['nullable', 'string', 'max:180'],
+            'client_phone' => ['nullable', 'string', 'max:40'],
+            'client_nif' => ['nullable', 'string', 'max:32'],
+            'client_address' => ['nullable', 'string', 'max:255'],
+            'client_email' => ['nullable', 'email:rfc', 'max:190'],
+            // A paid delivery note: pay the IVA / recargo it did not cover now, with this method.
+            'pay_difference' => ['nullable', 'boolean'],
+            'payment_method_id' => ['nullable', 'integer'],
         ]);
 
-        $invoice = $this->albaranInvoicer->invoice($request->user(), $sale, $data['iva'] ?? [], $data['recargo_rate_id'] ?? null);
+        $invoice = $this->albaranInvoicer->invoice(
+            $request->user(),
+            $sale,
+            $data['iva'] ?? [],
+            $data['recargo_rate_id'] ?? null,
+            \Illuminate\Support\Arr::only($data, ['client_company', 'client_phone', 'client_nif', 'client_address', 'client_email']),
+            (bool) ($data['pay_difference'] ?? false),
+            $data['payment_method_id'] ?? null,
+        );
 
         return $this->success(
             new SalesDocumentResource($invoice),

@@ -139,6 +139,38 @@ class SalesDocument extends Model
     }
 
     /**
+     * The documents the dashboard and the reports count. A delivery note, a proforma and a plain invoice count at their
+     * own total. An invoice made from a delivery note counts nothing, because the note already counted its price; but
+     * when that note was already paid, the IVA and recargo the invoice added on top is new money, so the invoice counts
+     * at just that difference (its total less the note's). One made from a proforma payment never counts.
+     *
+     * It is a query over a derived table named sales_documents, so every column and join the reports already use
+     * (sales_documents.total_cents and the rest) keeps working, with the difference in place of the total.
+     */
+    public static function counted(): \Illuminate\Database\Eloquent\Builder
+    {
+        $columns = array_values(array_filter(\Illuminate\Support\Facades\Schema::getColumnListing('sales_documents'), fn (string $column) => $column !== 'total_cents'));
+
+        $inner = \Illuminate\Support\Facades\DB::table('sales_documents as d')
+            ->leftJoin('sales_documents as src', 'src.id', '=', 'd.from_document_id')
+            ->select(array_map(fn (string $column) => 'd.'.$column, $columns))
+            ->selectRaw('CASE WHEN d.from_document_id IS NULL THEN d.total_cents ELSE d.total_cents - src.total_cents END AS total_cents')
+            ->whereNull('d.from_settlement_id')
+            ->where(function ($query) {
+                $query->whereNull('d.from_document_id')
+                    ->orWhere(function ($difference) {
+                        $difference->where('d.type', 'factura')
+                            ->where('src.payment_status', 'paid')
+                            ->whereNull('src.voided_at')
+                            ->whereNull('src.deleted_at')
+                            ->whereColumn('d.total_cents', '>', 'src.total_cents');
+                    });
+            });
+
+        return static::query()->fromSub($inner, 'sales_documents');
+    }
+
+    /**
      * A delivery note can be turned into an invoice once. If that invoice was voided, it can be done again.
      * The stock already left with the delivery note, so the invoice moves none.
      */
@@ -378,9 +410,29 @@ class SalesDocument extends Model
         return $this->type === 'albaran' && $this->payment_status === 'pending' && $this->canInvoice();
     }
 
+    /**
+     * An issued invoice can be corrected only while it is pending: once paid (even partly) it can only be voided.
+     * One made from a delivery note or a proforma payment is paper only and stays as it was made.
+     */
+    public function canEditInvoice(): bool
+    {
+        return $this->type === 'factura'
+            && ! $this->isDraft()
+            && ! $this->isVoided()
+            && ! $this->trashed()
+            && ! $this->isDerived()
+            && $this->payment_status === 'pending';
+    }
+
+    /** A delivery receipt takes no payment and is never converted, so it can be corrected until it is deleted. */
+    public function canEditDeliveryReceipt(): bool
+    {
+        return $this->type === 'nota_entrega' && ! $this->isVoided() && ! $this->trashed();
+    }
+
     public function canEdit(): bool
     {
-        return $this->canEditQuotation() || $this->canEditDeliveryNote() || $this->canEditDraft();
+        return $this->canEditQuotation() || $this->canEditDeliveryNote() || $this->canEditDraft() || $this->canEditInvoice() || $this->canEditDeliveryReceipt();
     }
 
     /**

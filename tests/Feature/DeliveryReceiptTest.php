@@ -129,22 +129,49 @@ class DeliveryReceiptTest extends TestCase
         $this->assertSame(1, Customer::query()->count());
     }
 
-    public function test_it_is_never_edited_paid_voided_or_converted(): void
+    public function test_it_is_never_paid_voided_or_converted_but_can_be_corrected(): void
     {
         $id = $this->issue()->assertCreated()->json('data.id');
         $as = fn () => $this->actingAs($this->owner, 'sanctum');
 
-        $as()->patchJson("/api/app/sales/{$id}", $this->payload(['client_name' => 'X']))->assertStatus(422);
         $as()->patchJson("/api/app/sales/{$id}/payment", ['payment_status' => 'paid'])->assertStatus(422);
         $as()->postJson("/api/app/sales/{$id}/void", ['reason' => 'Mistake'])->assertStatus(422);
         $as()->postJson("/api/app/sales/{$id}/convert", ['type' => 'factura'])->assertStatus(422);
         $as()->postJson("/api/app/sales/{$id}/invoice")->assertStatus(422);
 
         $as()->getJson("/api/app/sales/{$id}")->assertOk()
-            ->assertJsonPath('data.can_edit', false)
+            ->assertJsonPath('data.can_edit', true)
             ->assertJsonPath('data.can_invoice', false)
             ->assertJsonPath('data.can_delete', true);
         $this->assertSame(17, $this->product->fresh()->quantity);
+    }
+
+    public function test_a_receipt_is_corrected_with_only_the_stock_difference_and_still_names_no_client(): void
+    {
+        $created = $this->issue()->assertCreated();
+        $id = $created->json('data.id');
+        $this->assertSame(17, $this->product->fresh()->quantity);
+
+        $this->actingAs($this->owner, 'sanctum')->patchJson("/api/app/sales/{$id}", [
+            'issued_at' => now()->addDay()->toIso8601String(),
+            'client_name' => 'Someone',
+            'lines' => [[
+                'product_id' => $this->product->id, 'article' => $this->product->article, 'quantity' => 8,
+                'unit_price' => 500, 'discount_percent' => 0, 'iva_percent' => 21,
+            ]],
+        ])->assertOk()
+            ->assertJsonPath('data.number', $created->json('data.number'))
+            ->assertJsonPath('data.lines.0.quantity', 8)
+            ->assertJsonPath('data.total_cents', 4000)
+            ->assertJsonPath('data.tax_cents', 0)
+            ->assertJsonPath('data.customer_id', null);
+
+        $this->assertSame(12, $this->product->fresh()->quantity);
+        $this->assertSame('', (string) SalesDocument::query()->findOrFail($id)->client_name);
+
+        // A member who may only view cannot correct it.
+        $viewer = User::factory()->create(['role' => 'staff', 'company_id' => $this->company->id, 'permissions' => ['delivery_receipts.view']]);
+        $this->actingAs($viewer, 'sanctum')->patchJson("/api/app/sales/{$id}", $this->payload())->assertForbidden();
     }
 
     public function test_deleting_puts_the_stock_back_and_restoring_takes_it_again(): void

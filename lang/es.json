@@ -1,4 +1,9 @@
 {
+    "This invoice was voided and can no longer be edited.": "Esta factura está anulada y ya no se puede editar.",
+    "An invoice made from a delivery note or a proforma payment cannot be edited.": "Una factura hecha a partir de un albarán o del pago de una proforma no se puede editar.",
+    "An invoice can only be edited while it is pending. Once paid, void it instead.": "Una factura solo se puede editar mientras está pendiente. Una vez pagada, anúlala.",
+    "This delivery receipt can no longer be edited.": "Esta nota de entrega ya no se puede editar.",
+    "Only a quotation, an unpaid delivery note, a pending invoice or a delivery receipt can be edited.": "Solo se puede editar un presupuesto, un albarán sin pagar, una factura pendiente o una nota de entrega.",
     "Only an invoice can be saved as a draft.": "Solo una factura se puede guardar como borrador.",
     ":number saved as a draft. The number is kept; the stock is taken when it is issued.": ":number guardada como borrador. El número queda reservado; el stock se descuenta al emitirla.",
     "Issue the draft first; a draft is not paid.": "Emite primero el borrador; un borrador no se cobra.",

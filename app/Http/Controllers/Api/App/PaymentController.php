@@ -137,7 +137,50 @@ class PaymentController extends Controller
             ->with(['paymentMethod', 'settlements.paymentMethod'])
             ->withSum('settlements as settled_cents', 'total_cents')
             ->get()
-            ->map(fn (SalesDocument $document) => $this->fromDocument($document));
+            ->map(fn (SalesDocument $document) => $this->fromDocument($document))
+            ->concat($this->differences());
+    }
+
+    /**
+     * The IVA and recargo an invoice added to a delivery note that was already paid: the delivery note counts its own
+     * price above, and what the invoice adds on top is its own row, received once it is paid and owed until then.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function differences(): Collection
+    {
+        return SalesDocument::query()
+            ->where('type', 'factura')
+            ->whereNotNull('from_document_id')
+            ->whereNull('voided_at')
+            ->whereNull('draft_at')
+            ->whereHas('fromDocument', fn ($q) => $q->where('payment_status', 'paid')->whereNull('voided_at'))
+            ->with(['paymentMethod', 'fromDocument'])
+            ->get()
+            ->map(function (SalesDocument $invoice) {
+                $difference = max(0, (int) $invoice->total_cents - (int) $invoice->fromDocument->total_cents);
+                $paid = $invoice->payment_status === 'paid';
+
+                return $difference === 0 ? null : [
+                    'id' => 'difference-'.$invoice->id,
+                    'kind' => 'difference',
+                    'status' => $paid ? 'received' : 'pending',
+                    'document_id' => $invoice->id,
+                    'document_type' => $invoice->type,
+                    'document_number' => $invoice->number,
+                    'customer_id' => $invoice->customer_id,
+                    'client_code' => $invoice->client_code,
+                    'client_name' => $invoice->client_name,
+                    'client_company' => $invoice->client_company,
+                    'payment_method_id' => $paid ? $invoice->paymentMethod?->id : null,
+                    'payment_method' => $paid ? $this->methodPayload($invoice->paymentMethod) : null,
+                    'amount_cents' => $difference,
+                    'outstanding_cents' => $paid ? 0 : $difference,
+                    'paid_at' => $invoice->issued_at?->toIso8601String(),
+                ];
+            })
+            ->filter()
+            ->values();
     }
 
     /**

@@ -113,7 +113,19 @@ class SaleIssuer
             $type = $document->type;
             $companyId = (int) $user->company_id;
 
-            if ($type === 'albaran') {
+            // A delivery receipt names nobody: whatever was sent about a client is dropped.
+            if (! SalesDocument::hasClient($type)) {
+                $input = array_merge($input, [
+                    'customer_id' => null, 'save_customer' => false, 'client_code' => null, 'client_name' => '',
+                    'client_company' => null, 'client_phone' => null, 'client_nif' => null, 'client_nie' => null,
+                    'client_address' => null, 'client_email' => null,
+                ]);
+            }
+
+            // What the document already took out of stock goes back first, so only the difference counts. A draft
+            // took none, and a quotation never does.
+            $tookStock = ! $document->isDraft() && in_array($type, ['albaran', 'factura', 'nota_entrega'], true);
+            if ($tookStock) {
                 $document->load('lines');
                 $this->voider->restock($document);
             }
@@ -170,6 +182,18 @@ class SaleIssuer
             return __('This draft was deleted and can no longer be edited.');
         }
 
+        if ($document->type === 'factura') {
+            return $document->isVoided()
+                ? __('This invoice was voided and can no longer be edited.')
+                : ($document->isDerived()
+                    ? __('An invoice made from a delivery note or a proforma payment cannot be edited.')
+                    : __('An invoice can only be edited while it is pending. Once paid, void it instead.'));
+        }
+
+        if ($document->type === 'nota_entrega') {
+            return __('This delivery receipt can no longer be edited.');
+        }
+
         if ($document->type === 'albaran') {
             if ($document->isVoided()) {
                 return __('This delivery note was voided and can no longer be edited.');
@@ -181,7 +205,7 @@ class SaleIssuer
         }
 
         if ($document->type !== 'quotation') {
-            return __('Only a quotation or an unpaid delivery note can be edited.');
+            return __('Only a quotation, an unpaid delivery note, a pending invoice or a delivery receipt can be edited.');
         }
 
         return $document->isConverted()

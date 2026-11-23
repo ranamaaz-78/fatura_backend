@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CompanyPaymentMethod;
 use App\Models\Product;
 use App\Models\SalesDocument;
 use App\Models\TaxRate;
@@ -21,9 +22,13 @@ class AlbaranInvoicer
     /**
      * @param  array<int|string, float|int|string|null>  $ivaByLine  IVA percent per delivery-note line id, from the form
      */
-    public function invoice(User $user, SalesDocument $albaran, array $ivaByLine = [], ?int $recargoRateId = null): SalesDocument
+    /**
+     * @param  array<string, mixed>  $clientFill  Details the delivery note lacks (company, phone, nif, address, email). Only a
+     *                                           blank field is filled; what the note already says stays as it is.
+     */
+    public function invoice(User $user, SalesDocument $albaran, array $ivaByLine = [], ?int $recargoRateId = null, array $clientFill = [], bool $payDifference = false, mixed $differenceMethodId = null): SalesDocument
     {
-        return DB::transaction(function () use ($user, $albaran, $ivaByLine, $recargoRateId) {
+        return DB::transaction(function () use ($user, $albaran, $ivaByLine, $recargoRateId, $clientFill, $payDifference, $differenceMethodId) {
             /** @var SalesDocument $document */
             $document = SalesDocument::query()->whereKey($albaran->id)->lockForUpdate()->firstOrFail();
 
@@ -71,28 +76,48 @@ class AlbaranInvoicer
                 ];
             }
 
+            $fill = fn (?string $have, string $key): ?string => filled($have) ? $have : (filled($clientFill[$key] ?? null) ? trim((string) $clientFill[$key]) : null);
+            // A tax number already on the note, as NIF or NIE, is never replaced.
+            $hasTaxId = filled($document->client_nif) || filled($document->client_nie);
+
             $invoice = $this->issuer->issue($user, [
                 'type' => 'factura',
                 'issued_at' => now(),
-                // As the delivery note stands: paid with the method it was paid with, or still owed.
-                'payment_status' => $document->payment_status === 'paid' ? 'paid' : 'pending',
-                'payment_method_id' => $document->payment_method_id,
+                // Made pending; whether it is paid is settled just below, once IVA and recargo have made its total.
+                'payment_status' => 'pending',
+                'payment_method_id' => null,
                 'from_document_id' => $document->id,
                 'recargo_rate_id' => $recargoRateId,
                 'customer_id' => $document->customer_id,
                 'save_customer' => false,
                 'client_code' => $document->client_code,
                 'client_name' => $document->client_name,
-                'client_company' => $document->client_company,
-                'client_phone' => $document->client_phone,
-                'client_nif' => $document->client_nif,
+                'client_company' => $fill($document->client_company, 'client_company'),
+                'client_phone' => $fill($document->client_phone, 'client_phone'),
+                'client_nif' => $hasTaxId ? $document->client_nif : $fill(null, 'client_nif'),
                 'client_nie' => $document->client_nie,
-                'client_address' => $document->client_address,
-                'client_email' => $document->client_email,
+                'client_address' => $fill($document->client_address, 'client_address'),
+                'client_email' => $fill($document->client_email, 'client_email'),
                 'discount_type' => $document->discount_type,
                 'discount_value' => $document->discount_type === 'amount' ? (int) round($document->discount_value) : $document->discount_value,
                 'lines' => $lines,
             ]);
+
+            // A paid delivery note has paid its own price. The invoice adds IVA and recargo on top, so the rest is
+            // still owed: it is paid now (with the method chosen for it) or the invoice stays pending until it is.
+            // A delivery note still unpaid makes a pending invoice, as before.
+            if ($document->payment_status === 'paid') {
+                $difference = max(0, (int) $invoice->total_cents - (int) $document->total_cents);
+
+                if ($difference === 0) {
+                    $invoice->forceFill(['payment_status' => 'paid', 'payment_method_id' => $document->payment_method_id])->save();
+                } elseif ($payDifference) {
+                    $invoice->forceFill([
+                        'payment_status' => 'paid',
+                        'payment_method_id' => CompanyPaymentMethod::requireActive($companyId, $differenceMethodId),
+                    ])->save();
+                }
+            }
 
             $document->update([
                 'converted_to_id' => $invoice->id,

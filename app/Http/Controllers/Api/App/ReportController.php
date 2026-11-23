@@ -213,14 +213,15 @@ class ReportController extends Controller
      */
     private function tax(?array $range): array
     {
+        // An invoice made from a paid delivery note adds only its IVA here: the base was counted on the note.
         $rows = $this->saleDocuments($range)
             ->join('sales_document_lines', 'sales_document_lines.sales_document_id', '=', 'sales_documents.id')
             ->selectRaw('sales_document_lines.iva_percent as rate')
             ->selectRaw('COUNT(*) as line_count')
             ->selectRaw('COUNT(DISTINCT sales_documents.id) as document_count')
-            ->selectRaw('COALESCE(SUM(sales_document_lines.base_cents), 0) as base_cents')
+            ->selectRaw('COALESCE(SUM(CASE WHEN sales_documents.from_document_id IS NULL THEN sales_document_lines.base_cents ELSE 0 END), 0) as base_cents')
             ->selectRaw('COALESCE(SUM(sales_document_lines.tax_cents), 0) as tax_cents')
-            ->selectRaw('COALESCE(SUM(sales_document_lines.total_cents), 0) as total_cents')
+            ->selectRaw('COALESCE(SUM(CASE WHEN sales_documents.from_document_id IS NULL THEN sales_document_lines.total_cents ELSE sales_document_lines.tax_cents END), 0) as total_cents')
             ->groupBy('sales_document_lines.iva_percent')
             ->orderByDesc('sales_document_lines.iva_percent')
             ->get()
@@ -251,7 +252,7 @@ class ReportController extends Controller
      */
     private function products(?array $range): array
     {
-        $rows = $this->saleDocuments($range)
+        $rows = $this->saleDocuments($range, differences: false)
             ->join('sales_document_lines', 'sales_document_lines.sales_document_id', '=', 'sales_documents.id')
             ->selectRaw('sales_document_lines.product_id')
             ->selectRaw('sales_document_lines.article')
@@ -293,7 +294,7 @@ class ReportController extends Controller
      */
     private function sold(?array $range): array
     {
-        $rows = $this->saleDocuments($range)
+        $rows = $this->saleDocuments($range, differences: false)
             ->join('sales_document_lines', 'sales_document_lines.sales_document_id', '=', 'sales_documents.id')
             ->leftJoin('products', 'products.id', '=', 'sales_document_lines.product_id')
             ->selectRaw('sales_document_lines.product_id')
@@ -593,12 +594,15 @@ class ReportController extends Controller
     /**
      * @param  array{0: CarbonInterface, 1: CarbonInterface}|null  $range
      */
-    private function saleDocuments(?array $range): Builder
+    /**
+     * @param  bool  $differences  Count the IVA/recargo an invoice added to a paid delivery note (see SalesDocument::counted).
+     *                              Reports that work line by line (products, sold) leave it out: the note's lines already counted.
+     */
+    private function saleDocuments(?array $range, bool $differences = true): Builder
     {
-        return SalesDocument::query()
+        return SalesDocument::counted()
             ->whereIn('sales_documents.type', self::SALE_TYPES)
-            ->whereNull('sales_documents.from_settlement_id')
-            ->whereNull('sales_documents.from_document_id')
+            ->when(! $differences, fn (Builder $query) => $query->whereNull('sales_documents.from_document_id'))
             ->whereNull('sales_documents.voided_at')->whereNull('sales_documents.draft_at')
             ->when($range !== null, fn (Builder $query) => $query->whereBetween('sales_documents.issued_at', $range));
     }
