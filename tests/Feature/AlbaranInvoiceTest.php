@@ -170,6 +170,34 @@ class AlbaranInvoiceTest extends TestCase
         $this->assertNull(SalesDocument::query()->findOrFail($albaran->json('data.id'))->client_address);
     }
 
+    public function test_with_edit_client_on_every_client_detail_can_be_changed(): void
+    {
+        $albaran = $this->albaran();
+
+        $response = $this->invoice($albaran->json('data.id'), [
+            'edit_client' => true,
+            'client_name' => 'Rivas e Hijos',
+            'client_company' => 'Rivas e Hijos S.L.',
+            'client_nif' => 'A87654321',
+            'client_address' => 'Calle Nueva 9',
+            'client_phone' => '',
+        ])->assertCreated();
+
+        $response->assertJsonPath('data.client_name', 'Rivas e Hijos')
+            ->assertJsonPath('data.client_company', 'Rivas e Hijos S.L.')
+            ->assertJsonPath('data.client_nif', 'A87654321')
+            ->assertJsonPath('data.client_address', 'Calle Nueva 9');
+
+        // The delivery note itself is untouched.
+        $note = SalesDocument::query()->findOrFail($albaran->json('data.id'));
+        $this->assertSame('Taller Rivas', $note->client_name);
+        $this->assertSame('B12345678', $note->client_nif);
+
+        // A name is needed when the client is being edited.
+        $other = $this->albaran();
+        $this->invoice($other->json('data.id'), ['edit_client' => true, 'client_name' => ''])->assertStatus(422)->assertJsonValidationErrors('client_name');
+    }
+
     public function test_a_filled_detail_is_never_replaced_and_a_saved_client_gets_the_blanks_filled(): void
     {
         $body = [

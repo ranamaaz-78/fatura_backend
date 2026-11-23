@@ -24,7 +24,9 @@ class AlbaranInvoicer
      */
     /**
      * @param  array<string, mixed>  $clientFill  Details the delivery note lacks (company, phone, nif, address, email). Only a
-     *                                           blank field is filled; what the note already says stays as it is.
+     *                                           blank field is filled; what the note already says stays as it is. With
+     *                                           edit_client the client is fully editable: every detail, the name included,
+     *                                           is taken as sent (a blank one clears it).
      */
     public function invoice(User $user, SalesDocument $albaran, array $ivaByLine = [], ?int $recargoRateId = null, array $clientFill = [], bool $payDifference = false, mixed $differenceMethodId = null): SalesDocument
     {
@@ -76,7 +78,9 @@ class AlbaranInvoicer
                 ];
             }
 
-            $fill = fn (?string $have, string $key): ?string => filled($have) ? $have : (filled($clientFill[$key] ?? null) ? trim((string) $clientFill[$key]) : null);
+            $full = (bool) ($clientFill['edit_client'] ?? false);
+            $typed = fn (string $key): ?string => filled($clientFill[$key] ?? null) ? trim((string) $clientFill[$key]) : null;
+            $fill = fn (?string $have, string $key): ?string => $full ? $typed($key) : (filled($have) ? $have : $typed($key));
             // A tax number already on the note, as NIF or NIE, is never replaced.
             $hasTaxId = filled($document->client_nif) || filled($document->client_nie);
 
@@ -91,11 +95,11 @@ class AlbaranInvoicer
                 'customer_id' => $document->customer_id,
                 'save_customer' => false,
                 'client_code' => $document->client_code,
-                'client_name' => $document->client_name,
+                'client_name' => $full ? ($typed('client_name') ?? $document->client_name) : $document->client_name,
                 'client_company' => $fill($document->client_company, 'client_company'),
                 'client_phone' => $fill($document->client_phone, 'client_phone'),
-                'client_nif' => $hasTaxId ? $document->client_nif : $fill(null, 'client_nif'),
-                'client_nie' => $document->client_nie,
+                'client_nif' => $full ? $typed('client_nif') : ($hasTaxId ? $document->client_nif : $typed('client_nif')),
+                'client_nie' => $full ? null : $document->client_nie,
                 'client_address' => $fill($document->client_address, 'client_address'),
                 'client_email' => $fill($document->client_email, 'client_email'),
                 'discount_type' => $document->discount_type,

@@ -358,7 +358,10 @@ class SaleController extends Controller
             'iva.*' => ['nullable', 'numeric', 'min:0', 'max:100'],
             // A rate from Settings: recargo de equivalencia is added to the invoice.
             'recargo_rate_id' => ['nullable', 'integer'],
-            // Client details the delivery note lacks. Ones it already has are never replaced (see AlbaranInvoicer).
+            // Client details the delivery note lacks. Ones it already has are never replaced, unless edit_client is on:
+            // then the client is fully editable (see AlbaranInvoicer).
+            'edit_client' => ['nullable', 'boolean'],
+            'client_name' => ['required_if:edit_client,true,1', 'nullable', 'string', 'max:180'],
             'client_company' => ['nullable', 'string', 'max:180'],
             'client_phone' => ['nullable', 'string', 'max:40'],
             'client_nif' => ['nullable', 'string', 'max:32'],
@@ -374,7 +377,7 @@ class SaleController extends Controller
             $sale,
             $data['iva'] ?? [],
             $data['recargo_rate_id'] ?? null,
-            \Illuminate\Support\Arr::only($data, ['client_company', 'client_phone', 'client_nif', 'client_address', 'client_email']),
+            \Illuminate\Support\Arr::only($data, ['edit_client', 'client_name', 'client_company', 'client_phone', 'client_nif', 'client_address', 'client_email']),
             (bool) ($data['pay_difference'] ?? false),
             $data['payment_method_id'] ?? null,
         );
