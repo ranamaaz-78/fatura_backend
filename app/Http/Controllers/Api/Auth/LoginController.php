@@ -2,12 +2,10 @@
 
 namespace App\Http\Controllers\Api\Auth;
 
-use App\Enums\CompanyStatus;
-use App\Enums\UserRole;
-use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Services\SignInGate;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,7 +17,7 @@ class LoginController extends Controller
 {
     use ApiResponse;
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, SignInGate $gate): JsonResponse
     {
         $data = $request->validate([
             'email' => ['required', 'email'],
@@ -57,23 +55,15 @@ class LoginController extends Controller
             return $this->coded(__('The password is incorrect.'), 'WRONG_PASSWORD', 422);
         }
 
-        if ($user->status === UserStatus::Disabled) {
-            return $this->coded(__('This user account has been disabled.'), 'USER_DISABLED', 403);
+        // Upgrade the stored hash when the hashing settings changed (higher cost, another algorithm).
+        // The 'hashed' cast hashes the plain password again with the current settings.
+        if (Hash::needsRehash($user->password)) {
+            $user->forceFill(['password' => $data['password']])->save();
         }
 
-        $company = $user->company;
-
-        if ($company !== null && $company->status === CompanyStatus::Suspended) {
-            return $this->coded(__('This company account has been suspended.'), 'COMPANY_SUSPENDED', 403);
-        }
-
-        // The owner can still sign in to see the Subscription page and renew; the team waits until it is active.
-        if ($company !== null && $user->role === UserRole::Staff) {
-            $subscription = $company->activeSubscription;
-
-            if ($subscription === null || ! $subscription->isUsable((int) config('fatura.subscriptions.grace_days'))) {
-                return $this->coded(__('Your company subscription has expired. Please contact your administrator.'), 'SUBSCRIPTION_EXPIRED', 403);
-            }
+        // Disabled, suspended, or a team member whose company subscription ended: the same rules as a set-password link.
+        if ($refusal = $gate->refusal($user)) {
+            return $this->coded($refusal['message'], $refusal['code'], $refusal['status']);
         }
 
         RateLimiter::clear($throttleKey);

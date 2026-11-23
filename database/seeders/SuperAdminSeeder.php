@@ -19,11 +19,20 @@ class SuperAdminSeeder extends Seeder
             return;
         }
 
+        $password = config('fatura.super_admin.password');
+
+        // Never fall back to a guessable default: a re-run would otherwise reset a live admin to it.
+        if (blank($password)) {
+            $this->command?->warn('SUPER_ADMIN_PASSWORD is not set; skipping super admin seed.');
+
+            return;
+        }
+
         User::updateOrCreate(
             ['email' => $email],
             [
                 'name' => config('fatura.super_admin.name'),
-                'password' => config('fatura.super_admin.password') ?: 'password',
+                'password' => $password,
                 'role' => UserRole::SuperAdmin,
                 'status' => UserStatus::Active,
                 'company_id' => null,

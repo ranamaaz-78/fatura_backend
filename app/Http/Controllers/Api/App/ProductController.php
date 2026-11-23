@@ -197,8 +197,8 @@ class ProductController extends Controller
             ],
             'quantity' => ['nullable', 'integer', 'min:0', 'max:9999999'],
             'minimum_stock' => ['nullable', 'integer', 'min:0', 'max:9999999'],
-            'buying_price' => [$required, 'integer', 'min:0'],
-            'selling_price' => [$required, 'integer', 'min:0'],
+            'buying_price' => [$required, 'integer', 'min:0', 'max:'.Pricing::MAX_UNIT_CENTS],
+            'selling_price' => [$required, 'integer', 'min:0', 'max:'.Pricing::MAX_UNIT_CENTS],
             'iva_percent' => [$required, 'numeric', 'min:0', 'max:100'],
         ]);
     }

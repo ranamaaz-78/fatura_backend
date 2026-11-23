@@ -225,7 +225,7 @@ class DashboardController extends Controller
             ->select('sales_document_id')
             ->selectRaw('SUM(total_cents) as settled_cents')
             ->groupBy('sales_document_id')
-            ->getQuery();
+            ->toBase(); // toBase() keeps the company scope; getQuery() would drop it.
     }
 
     private function outstandingExpr(): string

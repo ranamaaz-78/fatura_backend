@@ -33,7 +33,9 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // Off: the app never hands out signed storage URLs, so Laravel's public storage/{path} routes stay unregistered.
+            // Private files (logos, product images, installers) are served by their own authenticated controllers.
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],

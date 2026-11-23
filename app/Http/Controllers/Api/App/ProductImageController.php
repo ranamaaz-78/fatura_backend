@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\App;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ProductImageResource;
 use App\Models\ProductImage;
+use App\Services\CompanyLogoStore;
 use App\Services\ProductImageStore;
 use App\Support\ImageName;
 use App\Traits\ApiResponse;
@@ -208,7 +209,7 @@ class ProductImageController extends Controller
     {
         $data = $request->validate([
             'uuids' => ['required', 'array', 'min:1', 'max:500'],
-            'uuids.*' => ['string'],
+            'uuids.*' => ['string', 'max:64'],
         ]);
 
         $done = [];
@@ -257,10 +258,14 @@ class ProductImageController extends Controller
 
         abort_unless($disk->exists($productImage->path), 404);
 
-        return $disk->response($productImage->path, $productImage->name, [
-            'Content-Type' => $productImage->mime,
-            'Cache-Control' => 'private, max-age=600',
-        ]);
+        // Saved under its label plus the real extension of the stored file, so "evil.php" downloads as "evil.php.jpg".
+        $extension = pathinfo($productImage->path, PATHINFO_EXTENSION);
+
+        return $disk->response(
+            $productImage->path,
+            $productImage->name.'.'.$extension,
+            CompanyLogoStore::safeHeaders($productImage->mime),
+        );
     }
 
     private function existing(int $companyId, string $key): ?ProductImage

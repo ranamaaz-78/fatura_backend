@@ -151,6 +151,8 @@ class ApplicationController extends Controller
 
     public function whatsappLink(Request $request, Application $application, WhatsAppSender $sender): JsonResponse
     {
+        $request->validate(['message' => ['nullable', 'string', 'max:2000']]);
+
         $number = $application->whatsappNumber();
 
         if (blank($number)) {

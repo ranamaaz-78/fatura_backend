@@ -11,6 +11,20 @@ use Illuminate\Support\Facades\DB;
 
 class ProductImportService
 {
+    /** The same limits as the product form (ProductController) and the database columns. */
+    private const MAX = [
+        'article' => 255,
+        'description' => 2000,
+        'brand' => 120,
+        'short_code' => 120,
+        'barcode' => 64,
+        'category' => 120,
+        'supplier' => 180,
+    ];
+
+    /** Quantity and minimum stock: the same ceiling as the product form. */
+    private const MAX_PIECES = 9_999_999;
+
     /**
      * Validates every row first and only writes when all of them pass, so a red
      * row can never slip into the catalog.
@@ -32,27 +46,42 @@ class ProductImportService
 
         foreach ($rows as $index => $row) {
             $messages = [];
-            $article = trim((string) ($row['article'] ?? ''));
+            // text() turns anything that is not plain text (a list, an object) into "missing" instead of crashing.
+            $article = $this->text($row['article'] ?? null) ?? '';
 
             if ($article === '') {
                 $messages[] = __('Article is required.');
             }
 
+            foreach (self::MAX as $field => $max) {
+                $value = $this->text($row[$field] ?? null);
+
+                if ($value !== null && mb_strlen($value) > $max) {
+                    $messages[] = __(':field is too long (at most :max characters).', ['field' => $this->label($field), 'max' => $max]);
+                }
+            }
+
             $buying = $this->cents($row['buying_price'] ?? null);
             $selling = $this->cents($row['selling_price'] ?? null);
-            $iva = Pricing::toNumber($row['iva_percent'] ?? null) ?? 0.0;
+            $iva = Pricing::toNumber(is_scalar($row['iva_percent'] ?? null) ? $row['iva_percent'] : null) ?? 0.0;
 
             if ($buying === null || $buying < 0) {
                 $messages[] = __('Buying price is not a valid amount.');
+            } elseif ($buying > Pricing::MAX_UNIT_CENTS) {
+                $messages[] = __('Buying price is too high.');
             }
 
             if ($selling === null || $selling < 0) {
                 $messages[] = __('Selling price is not a valid amount.');
+            } elseif ($selling > Pricing::MAX_UNIT_CENTS) {
+                $messages[] = __('Selling price is too high.');
             } elseif ($buying !== null && $selling <= $buying) {
                 $messages[] = __('Selling price must be higher than the buying price.');
             }
 
-            if ($iva < 0 || $iva > 100 || ! in_array(round($iva, 2), $allowedRates, true)) {
+            $ivaGiven = $row['iva_percent'] ?? null;
+
+            if (($ivaGiven !== null && ! is_scalar($ivaGiven)) || $iva < 0 || $iva > 100 || ! in_array(round($iva, 2), $allowedRates, true)) {
                 $messages[] = __('Choose an IVA rate from your settings.');
             }
 
@@ -61,6 +90,8 @@ class ProductImportService
 
             if ($quantity === null || $minimumStock === null) {
                 $messages[] = __('Quantity and minimum stock must be whole numbers.');
+            } elseif ($quantity > self::MAX_PIECES || $minimumStock > self::MAX_PIECES) {
+                $messages[] = __('Quantity and minimum stock can be at most :max.', ['max' => self::MAX_PIECES]);
             }
 
             $barcode = $this->text($row['barcode'] ?? null);
@@ -242,11 +273,14 @@ class ProductImportService
             return $value;
         }
 
-        if ($value === null || $value === '') {
+        if ($value === null || $value === '' || ! is_numeric($value)) {
             return null;
         }
 
-        return is_numeric($value) ? (int) round((float) $value) : null;
+        $rounded = round((float) $value);
+
+        // Beyond PHP's integer range the cast would wrap into a random number; "too high" is reported instead.
+        return abs($rounded) >= PHP_INT_MAX ? PHP_INT_MAX : (int) $rounded;
     }
 
     private function wholeNumber(mixed $value): ?int
@@ -259,9 +293,33 @@ class ProductImportService
             return null;
         }
 
+        // toNumber() drops anything that is not a digit (so "€ 12,50" reads), which would read "1e12" as 112.
+        // A count of pieces has no letters in it, so a value with letters is refused instead of misread.
+        if (is_string($value) && preg_match('/\p{L}/u', $value)) {
+            return null;
+        }
+
         $number = Pricing::toNumber((string) $value);
 
-        return $number === null || $number < 0 ? null : (int) round($number);
+        if ($number === null || $number < 0) {
+            return null;
+        }
+
+        // Kept inside the integer range; anything above the limit is reported by the caller.
+        return $number >= PHP_INT_MAX ? PHP_INT_MAX : (int) round($number);
+    }
+
+    private function label(string $field): string
+    {
+        return match ($field) {
+            'article' => __('Article'),
+            'description' => __('Description'),
+            'brand' => __('Brand'),
+            'short_code' => __('Short code'),
+            'barcode' => __('Barcode'),
+            'category' => __('Category'),
+            default => __('Supplier'),
+        };
     }
 
     private function text(mixed $value): ?string

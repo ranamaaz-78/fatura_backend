@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\Api\Auth;
 
-use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Services\SignInGate;
 use App\Traits\ApiResponse;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
@@ -18,21 +18,40 @@ class SetPasswordController extends Controller
 {
     use ApiResponse;
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, SignInGate $gate): JsonResponse
     {
         $data = $request->validate([
             'token' => ['required', 'string'],
             'email' => ['required', 'email'],
-            'password' => ['required', 'confirmed', PasswordRule::min(8)],
+            'password' => ['required', 'confirmed', PasswordRule::min(8), 'max:72'],
         ]);
+
+        $broker = Password::broker('invites');
+        $user = $broker->getUser(['email' => $data['email']]);
+
+        // The link is checked first, so nobody without one can learn whether an account is disabled or suspended.
+        if (! $user instanceof User || ! $broker->tokenExists($user, $data['token'])) {
+            return $this->invalidLink();
+        }
+
+        // A link never gets round what the sign-in form refuses: a disabled member, a suspended company, a team
+        // whose subscription ended. The link is left unused, so it still works if the account is opened again.
+        if ($refusal = $gate->refusal($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => $refusal['message'],
+                'data' => [],
+                'code' => $refusal['code'],
+            ], $refusal['status']);
+        }
 
         /** @var User|null $resolved */
         $resolved = null;
 
-        $status = Password::broker('invites')->reset($data, function (User $user, string $password) use (&$resolved) {
+        $status = $broker->reset($data, function (User $user, string $password) use (&$resolved) {
+            // Only the password changes. The account status is the owner's or the platform's to set, never the link's.
             $user->forceFill([
                 'password' => $password,
-                'status' => UserStatus::Active,
                 'email_verified_at' => $user->email_verified_at ?? now(),
                 'remember_token' => Str::random(60),
             ])->save();
@@ -43,16 +62,7 @@ class SetPasswordController extends Controller
         });
 
         if ($status !== Password::PASSWORD_RESET || $resolved === null) {
-            return response()->json([
-                'success' => false,
-                'message' => __('This link is invalid or has expired.'),
-                'data' => [],
-                'code' => 'INVITE_INVALID',
-                'support' => [
-                    'email' => config('fatura.support.email'),
-                    'whatsapp' => config('fatura.support.whatsapp'),
-                ],
-            ], 422);
+            return $this->invalidLink();
         }
 
         $resolved->forceFill(['last_login_at' => now()])->save();
@@ -62,5 +72,19 @@ class SetPasswordController extends Controller
             'user' => new UserResource($resolved),
             'role' => $resolved->role->value,
         ], __('Your password is set. Welcome aboard.'));
+    }
+
+    private function invalidLink(): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => __('This link is invalid or has expired.'),
+            'data' => [],
+            'code' => 'INVITE_INVALID',
+            'support' => [
+                'email' => config('fatura.support.email'),
+                'whatsapp' => config('fatura.support.whatsapp'),
+            ],
+        ], 422);
     }
 }

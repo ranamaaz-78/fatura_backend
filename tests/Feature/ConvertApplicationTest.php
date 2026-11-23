@@ -214,12 +214,15 @@ class ConvertApplicationTest extends TestCase
             $this->payload($plan),
         );
 
+        // The admin is told it failed; the mail server's own words stay on the server.
         $response->assertCreated()
             ->assertJsonPath('data.email_sent', false)
-            ->assertJsonPath('data.email_error', 'smtp down');
+            ->assertJsonPath('data.email_error', 'The email could not be sent. The details are in the server log.');
+        $this->assertStringNotContainsString('smtp down', $response->getContent());
 
         $this->assertDatabaseHas('companies', ['email' => 'billing@northwind.test']);
-        $this->assertTrue(NotificationLog::where('channel', NotificationChannel::Email)->where('status', 'failed')->exists());
+        $failed = NotificationLog::where('channel', NotificationChannel::Email)->where('status', 'failed')->firstOrFail();
+        $this->assertStringContainsString('smtp down', json_encode($failed->getAttributes()));
         $this->assertStringStartsWith('https://wa.me/', $response->json('data.whatsapp_url'));
     }
 

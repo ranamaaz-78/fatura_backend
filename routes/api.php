@@ -22,21 +22,22 @@ Route::prefix('public')->group(function () {
     Route::get('/plans', [PublicPlanController::class, 'index']);
     Route::get('/site-content', [PublicSiteContentController::class, 'show']);
     Route::get('/desktop-app', [PublicDesktopAppController::class, 'show']);
-    Route::get('/desktop-app/download', [PublicDesktopAppController::class, 'download'])->middleware('throttle:20,1');
+    Route::get('/desktop-app/download', [PublicDesktopAppController::class, 'download'])->middleware('throttle:20,1,desktop-download');
     // The installed Windows app updates itself from here (electron-updater's "generic" feed).
-    Route::get('/desktop-app/updates/latest.yml', [PublicDesktopAppController::class, 'manifest'])->middleware('throttle:60,1');
-    Route::get('/desktop-app/updates/{file}', [PublicDesktopAppController::class, 'updateFile'])->middleware('throttle:20,1');
-    Route::get('/invoices/verify/{code}', [InvoiceVerificationController::class, 'show'])->middleware('throttle:30,1');
-    Route::get('/invoices/verify/{code}/document', [InvoiceVerificationController::class, 'document'])->middleware('throttle:30,1');
-    Route::post('/applications/otp', [PublicApplicationController::class, 'requestOtp'])->middleware('throttle:6,1');
-    Route::post('/applications', [PublicApplicationController::class, 'store'])->middleware('throttle:10,1');
+    Route::get('/desktop-app/updates/latest.yml', [PublicDesktopAppController::class, 'manifest'])->middleware('throttle:60,1,desktop-manifest');
+    Route::get('/desktop-app/updates/{file}', [PublicDesktopAppController::class, 'updateFile'])->middleware('throttle:20,1,desktop-update');
+    Route::get('/invoices/verify/{code}', [InvoiceVerificationController::class, 'show'])->middleware('throttle:30,1,invoice-verify');
+    Route::get('/invoices/verify/{code}/document', [InvoiceVerificationController::class, 'document'])->middleware('throttle:30,1,invoice-document');
+    Route::post('/applications/otp', [PublicApplicationController::class, 'requestOtp'])->middleware('throttle:6,1,application-otp');
+    Route::post('/applications', [PublicApplicationController::class, 'store'])->middleware('throttle:10,1,application');
 });
 
 Route::prefix('auth')->group(function () {
-    Route::post('/login', [Auth\LoginController::class, 'store'])->middleware('throttle:30,1');
-    Route::post('/set-password', [Auth\SetPasswordController::class, 'store']);
-    Route::post('/forgot-password', [Auth\PasswordResetController::class, 'forgot'])->middleware('throttle:5,1');
-    Route::post('/reset-password', [Auth\PasswordResetController::class, 'reset']);
+    Route::post('/login', [Auth\LoginController::class, 'store'])->middleware('throttle:30,1,login');
+    // Token-guarded, but still limited: each attempt runs bcrypt, and guessing should be slow.
+    Route::post('/set-password', [Auth\SetPasswordController::class, 'store'])->middleware('throttle:10,1,set-password');
+    Route::post('/forgot-password', [Auth\PasswordResetController::class, 'forgot'])->middleware('throttle:5,1,forgot-password');
+    Route::post('/reset-password', [Auth\PasswordResetController::class, 'reset'])->middleware('throttle:10,1,reset-password');
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/me', Auth\MeController::class);
@@ -99,7 +100,7 @@ Route::middleware(['auth:sanctum', 'role:super_admin'])->prefix('admin')->group(
 Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')->group(function () {
     Route::get('/me', Auth\MeController::class);
     // Customers practice in the shared demo account: in with their own login, out again when they are done.
-    Route::post('/demo/enter', [Tenant\DemoController::class, 'enter'])->middleware('throttle:10,1');
+    Route::post('/demo/enter', [Tenant\DemoController::class, 'enter'])->middleware('throttle:10,1,demo-enter');
     Route::post('/demo/exit', [Tenant\DemoController::class, 'exit']);
     Route::get('/subscription', Tenant\SubscriptionController::class)->middleware('role:business_admin')->middleware('not.demo');
 

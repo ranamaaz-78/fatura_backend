@@ -607,7 +607,7 @@ class ReportController extends Controller
             ->select('sales_document_id')
             ->selectRaw('SUM(total_cents) as settled_cents')
             ->groupBy('sales_document_id')
-            ->getQuery();
+            ->toBase(); // toBase() keeps the company scope; getQuery() would drop it.
     }
 
     private function lastMethodSub(): QueryBuilder
@@ -620,7 +620,7 @@ class ReportController extends Controller
         return SalesDocumentSettlement::query()
             ->joinSub($latest, 'latest', 'latest.max_id', '=', 'sales_document_settlements.id')
             ->select('sales_document_settlements.sales_document_id', 'sales_document_settlements.payment_method_id')
-            ->getQuery();
+            ->toBase(); // toBase() keeps the company scope; getQuery() would drop it.
     }
 
     private function outstandingExpr(): string

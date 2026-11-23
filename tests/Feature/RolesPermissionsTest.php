@@ -36,17 +36,44 @@ class RolesPermissionsTest extends TestCase
         $this->owner = User::factory()->businessAdmin()->create(['company_id' => $this->company->id]);
     }
 
-    /** A member made the way the owner makes one: through the team screen, from a role and its ticks. */
+    /**
+     * A member made the way the owner makes one: through the team screen, from a role and its ticks. They then
+     * choose their password through the emailed link, as a real member would.
+     */
     private function member(string $role, ?array $permissions = null, string $email = 'member@shop.test'): User
     {
         $this->actingAs($this->owner, 'sanctum')->postJson('/api/app/team', [
             'name' => 'Marta Rivas',
             'email' => $email,
-            'password' => 'secret-pass-1',
             'permissions' => $permissions ?? Permissions::preset($role),
         ])->assertCreated();
 
+        $this->useLink($this->lastMailTo($email), 'secret-pass-1');
+
         return User::where('email', $email)->firstOrFail();
+    }
+
+    private function lastMailTo(string $email): TeamMemberMail
+    {
+        $sent = Mail::sent(TeamMemberMail::class, fn (TeamMemberMail $mail) => $mail->hasTo($email));
+        $this->assertNotEmpty($sent, "No team email went to {$email}.");
+
+        return $sent->last();
+    }
+
+    /** Opens the set-password link from the email and chooses a password with it. */
+    private function useLink(TeamMemberMail $mail, string $password): void
+    {
+        parse_str((string) parse_url($mail->setPasswordUrl, PHP_URL_QUERY), $query);
+
+        $this->app['auth']->forgetGuards();
+        $this->postJson('/api/auth/set-password', [
+            'token' => $query['token'],
+            'email' => $query['email'],
+            'password' => $password,
+            'password_confirmation' => $password,
+        ])->assertOk();
+        $this->app['auth']->forgetGuards();
     }
 
     private function sale(string $type, User $as)
@@ -93,7 +120,8 @@ class RolesPermissionsTest extends TestCase
         $this->assertEqualsCanonicalizing(Permissions::preset('cashier'), $member->permissions);
 
         Mail::assertSent(TeamMemberMail::class, fn (TeamMemberMail $mail) => $mail->hasTo('member@shop.test')
-            && $mail->password === 'secret-pass-1'
+            && str_contains($mail->setPasswordUrl, '/set-password?token=')
+            && str_contains($mail->setPasswordUrl, urlencode('member@shop.test'))
             && $mail->created);
 
         // Ticking something else makes it a custom role.
@@ -101,12 +129,11 @@ class RolesPermissionsTest extends TestCase
         $this->assertSame('custom', $custom->team_role);
     }
 
-    public function test_only_real_permissions_a_free_email_and_a_proper_password_are_accepted(): void
+    public function test_only_real_permissions_and_a_free_email_are_accepted(): void
     {
-        $base = ['name' => 'X', 'email' => 'x@shop.test', 'password' => 'secret-pass-1', 'permissions' => ['invoices.view']];
+        $base = ['name' => 'X', 'email' => 'x@shop.test', 'permissions' => ['invoices.view']];
 
         $this->actingAs($this->owner, 'sanctum')->postJson('/api/app/team', [...$base, 'permissions' => ['invoices.fly']])->assertStatus(422);
-        $this->actingAs($this->owner, 'sanctum')->postJson('/api/app/team', [...$base, 'password' => 'short'])->assertStatus(422);
         $this->actingAs($this->owner, 'sanctum')->postJson('/api/app/team', [...$base, 'email' => $this->owner->email])->assertStatus(422);
         $this->actingAs($this->owner, 'sanctum')->postJson('/api/app/team', [...$base, 'permissions' => []])->assertStatus(422);
     }
@@ -153,7 +180,7 @@ class RolesPermissionsTest extends TestCase
     {
         $manager = $this->member('manager');
 
-        $this->actingAs($manager, 'sanctum')->postJson('/api/app/team', ['name' => 'X', 'email' => 'y@shop.test', 'password' => 'secret-pass-1', 'permissions' => ['invoices.view']])->assertForbidden();
+        $this->actingAs($manager, 'sanctum')->postJson('/api/app/team', ['name' => 'X', 'email' => 'y@shop.test', 'permissions' => ['invoices.view']])->assertForbidden();
         $this->actingAs($manager, 'sanctum')->patchJson('/api/app/company/locale', ['locale' => 'es'])->assertForbidden();
         $this->actingAs($manager, 'sanctum')->patchJson('/api/app/company/document-locale', ['document_locale' => 'es'])->assertForbidden();
         $this->actingAs($manager, 'sanctum')->getJson('/api/app/subscription')->assertForbidden();
@@ -177,9 +204,18 @@ class RolesPermissionsTest extends TestCase
 
         $this->actingAs($this->owner, 'sanctum')->patchJson("/api/app/team/{$member->id}/status", ['status' => 'active'])->assertOk();
 
-        // A new password is emailed and works.
-        $this->actingAs($this->owner, 'sanctum')->postJson("/api/app/team/{$member->id}/password", ['password' => 'brand-new-pass'])->assertOk();
-        Mail::assertSent(TeamMemberMail::class, fn (TeamMemberMail $mail) => $mail->password === 'brand-new-pass' && ! $mail->created);
+        // Renewing the password: the old one stops at once, sessions close, and a fresh link is emailed.
+        $member->createToken('api');
+        $this->actingAs($this->owner, 'sanctum')->postJson("/api/app/team/{$member->id}/password")
+            ->assertOk()->assertJsonPath('data.password_set', false)->assertJsonPath('data.email_sent', true);
+        $this->assertSame(0, $member->tokens()->count());
+        $this->app['auth']->forgetGuards();
+        $this->postJson('/api/auth/login', ['email' => $member->email, 'password' => 'secret-pass-1'])
+            ->assertStatus(422)->assertJsonPath('code', 'PASSWORD_NOT_SET');
+
+        $mail = $this->lastMailTo($member->email);
+        $this->assertFalse($mail->created);
+        $this->useLink($mail, 'brand-new-pass');
         $this->postJson('/api/auth/login', ['email' => $member->email, 'password' => 'brand-new-pass'])->assertOk();
 
         // Never the owner, never another company.
@@ -310,7 +346,6 @@ class RolesPermissionsTest extends TestCase
         $this->actingAs($this->owner, 'sanctum')->postJson('/api/app/team', [
             'name' => 'Marta Rivas',
             'email' => 'picked@shop.test',
-            'password' => 'secret-pass-1',
             'team_role' => 'cashier',
             'permissions' => [...Permissions::preset('cashier'), 'reports.view'],
         ])->assertCreated()->assertJsonPath('data.team_role', 'cashier');
@@ -325,15 +360,52 @@ class RolesPermissionsTest extends TestCase
         $this->actingAs($this->owner, 'sanctum')->patchJson("/api/app/team/{$member->id}", ['team_role' => 'boss'])->assertStatus(422);
     }
 
+    public function test_the_owner_never_chooses_the_password_and_a_new_member_waits_for_their_link(): void
+    {
+        // An old screen that still sends a password: it is ignored, never stored or emailed.
+        $this->actingAs($this->owner, 'sanctum')->postJson('/api/app/team', [
+            'name' => 'Marta Rivas',
+            'email' => 'waiting@shop.test',
+            'password' => 'owner-chosen-1',
+            'permissions' => Permissions::preset('cashier'),
+        ])->assertCreated()->assertJsonPath('data.password_set', false)->assertJsonPath('data.email_sent', true);
+
+        $member = User::where('email', 'waiting@shop.test')->firstOrFail();
+        $this->assertNull($member->password);
+
+        $this->app['auth']->forgetGuards();
+        $this->postJson('/api/auth/login', ['email' => 'waiting@shop.test', 'password' => 'owner-chosen-1'])
+            ->assertStatus(422)->assertJsonPath('code', 'PASSWORD_NOT_SET');
+
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/app/team')
+            ->assertJsonPath('data.members.0.password_set', false);
+
+        // The link works once.
+        $mail = $this->lastMailTo('waiting@shop.test');
+        $this->useLink($mail, 'my-own-pass-1');
+        $this->postJson('/api/auth/login', ['email' => 'waiting@shop.test', 'password' => 'my-own-pass-1'])->assertOk();
+
+        parse_str((string) parse_url($mail->setPasswordUrl, PHP_URL_QUERY), $query);
+        $this->app['auth']->forgetGuards();
+        $this->postJson('/api/auth/set-password', [
+            'token' => $query['token'],
+            'email' => $query['email'],
+            'password' => 'someone-else-1',
+            'password_confirmation' => 'someone-else-1',
+        ])->assertStatus(422)->assertJsonPath('code', 'INVITE_INVALID');
+    }
+
     public function test_the_login_email_really_renders(): void
     {
         $member = $this->member('cashier');
 
         foreach ([true, false] as $created) {
-            $html = (new TeamMemberMail($member->fresh(), 'secret-pass-1', $created))->render();
+            $url = 'https://app.test/set-password?token=abc123&email=member%40shop.test';
+            $html = (new TeamMemberMail($member->fresh(), $url, $created))->render();
 
             $this->assertStringContainsString('member@shop.test', $html);
-            $this->assertStringContainsString('secret-pass-1', $html);
+            $this->assertStringContainsString(e($url), $html);
+            $this->assertStringNotContainsString('secret-pass-1', $html);
             $this->assertStringContainsString(config('fatura.support.email'), $html);
         }
     }

@@ -5,6 +5,12 @@ namespace App\Support;
 class Pricing
 {
     /**
+     * The highest price of one piece, in cents (9,999,999.99), the same as Purchases allow. With at most 100 lines
+     * of 100,000 pieces a document still adds up far inside PHP's integer range, so totals can never overflow.
+     */
+    public const MAX_UNIT_CENTS = 999_999_999;
+
+    /**
      * Margin implied by a net selling price. IVA is not part of this price;
      * the invoice adds it later.
      */

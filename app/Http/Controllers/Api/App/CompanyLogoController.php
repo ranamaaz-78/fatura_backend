@@ -57,9 +57,12 @@ class CompanyLogoController extends Controller
         $disk = Storage::disk(CompanyLogoStore::DISK);
         abort_unless($disk->exists($company->logo_path), 404);
 
-        return $disk->response($company->logo_path, 'logo', [
-            'Content-Type' => $disk->mimeType($company->logo_path) ?: 'image/png',
-            'Cache-Control' => 'private, max-age=600',
-        ]);
+        $extension = pathinfo($company->logo_path, PATHINFO_EXTENSION);
+
+        return $disk->response(
+            $company->logo_path,
+            'logo.'.$extension,
+            CompanyLogoStore::safeHeaders($disk->mimeType($company->logo_path) ?: 'image/png'),
+        );
     }
 }

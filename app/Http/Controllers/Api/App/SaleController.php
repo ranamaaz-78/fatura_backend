@@ -18,6 +18,7 @@ use App\Services\SaleVoider;
 use App\Services\SettlementInvoicer;
 use App\Support\IssueDate;
 use App\Support\Permissions;
+use App\Support\Pricing;
 use App\Traits\ApiResponse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -276,7 +277,7 @@ class SaleController extends Controller
             'lines' => ['required', 'array', 'min:1', 'max:100'],
             'lines.*.line_id' => ['required', 'integer'],
             'lines.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
-            'lines.*.unit_price' => ['required', 'integer', 'min:0'],
+            'lines.*.unit_price' => ['required', 'integer', 'min:0', 'max:'.Pricing::MAX_UNIT_CENTS],
         ]);
 
         $document = $this->settler->settle($request->user(), $sale, $data);
@@ -578,7 +579,7 @@ class SaleController extends Controller
             'client_email' => ['nullable', 'email:rfc', 'max:190'],
             // A discount on the whole bill: a percentage, or an amount in cents.
             'discount_type' => ['nullable', Rule::in(['percent', 'amount'])],
-            'discount_value' => ['nullable', 'required_with:discount_type', 'numeric', 'min:0'],
+            'discount_value' => ['nullable', 'required_with:discount_type', 'numeric', 'min:0', 'max:'.Pricing::MAX_UNIT_CENTS],
             // A rate from Settings. The server works out the amount. Invoices and quotations only.
             'recargo_rate_id' => ['nullable', 'integer'],
             'lines' => ['required', 'array', 'min:1', 'max:100'],
@@ -586,7 +587,7 @@ class SaleController extends Controller
             'lines.*.article' => ['required', 'string', 'max:180'],
             'lines.*.description' => ['nullable', 'string', 'max:2000'],
             'lines.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
-            'lines.*.unit_price' => ['required', 'integer', 'min:0'],
+            'lines.*.unit_price' => ['required', 'integer', 'min:0', 'max:'.Pricing::MAX_UNIT_CENTS],
             'lines.*.discount_percent' => ['required', 'numeric', 'min:0', 'max:100'],
             'lines.*.iva_percent' => ['required', 'numeric', 'min:0', 'max:100'],
         ];

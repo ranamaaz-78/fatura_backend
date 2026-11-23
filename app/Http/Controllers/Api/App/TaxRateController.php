@@ -51,7 +51,9 @@ class TaxRateController extends Controller
     {
         $companyId = $request->user()->company_id;
 
-        if ($request->exists('rate')) {
+        // Round only a real number: anything else ("abc", a list) is left for the rules below to refuse,
+        // instead of being cast to 0 or 1 and saved as a rate nobody typed.
+        if (is_numeric($request->input('rate'))) {
             $request->merge(['rate' => round((float) $request->input('rate'), 2)]);
         }
 

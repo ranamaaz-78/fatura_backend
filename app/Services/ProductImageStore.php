@@ -46,8 +46,13 @@ class ProductImageStore
             return __('Images must be 5 MB or smaller.');
         }
 
-        // Read the type off the bytes; the browser header is not trusted.
-        $mime = $file->getMimeType();
+        // Read the type off the bytes; the browser header is not trusted. A file that cannot be read (removed by
+        // an antivirus, say) is a failed upload, not a server error.
+        try {
+            $mime = $file->getMimeType();
+        } catch (\Throwable) {
+            return __('The upload did not finish.');
+        }
 
         if ($mime === null || ! array_key_exists($mime, self::ALLOWED)) {
             return __('Only JPEG, PNG, WebP and GIF images are allowed.');
@@ -59,9 +64,14 @@ class ProductImageStore
             return __('The file extension does not match the real image type.');
         }
 
+        // The first bytes can be faked; the image header must also read as a picture of that type.
         $size = @getimagesize($file->getRealPath());
 
-        if ($size !== false && $size[0] * $size[1] > self::MAX_PIXELS) {
+        if ($size === false || ($size['mime'] ?? null) !== $mime) {
+            return __('This file is not a valid image.');
+        }
+
+        if ($size[0] * $size[1] > self::MAX_PIXELS) {
             return __('That image is too large in pixels. Use one under 40 megapixels.');
         }
 

@@ -18,6 +18,8 @@
         </include>
     </source>
     <php>
+        <!-- The whole suite runs in one process and grows past PHP's default 128M before the large-photo tests. -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_LOCALE" value="en"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>

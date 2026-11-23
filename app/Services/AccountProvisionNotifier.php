@@ -44,8 +44,9 @@ class AccountProvisionNotifier
         try {
             Mail::to($owner->email)->locale($locale)->sendNow(new AccountReadyMail($owner, $company, $subscription, $url));
         } catch (Throwable $e) {
+            // The mail server's own words (host, login name, codes) stay on the server: log and notification log.
             $emailError = $e->getMessage();
-            Log::error('Account-ready email failed: '.$emailError);
+            Log::error('Account-ready email failed: '.$emailError, ['exception' => $e]);
         }
 
         $this->logger->log(
@@ -55,6 +56,9 @@ class AccountProvisionNotifier
             $emailError === null ? NotificationStatus::Sent : NotificationStatus::Failed,
             $context + ['error' => $emailError],
         );
+
+        // What the admin screen is told: that it failed, not the mail server's internals.
+        $emailError = $emailError === null ? null : __('The email could not be sent. The details are in the server log.');
 
         $number = $owner->whatsapp ?: $owner->phone;
 

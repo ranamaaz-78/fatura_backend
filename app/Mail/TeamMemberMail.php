@@ -7,12 +7,15 @@ use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 
-/** Tells a team member how to sign in: the address, the password the owner chose, and the link. Sent straight away. */
+/**
+ * Tells a team member how to get in: a link to choose their own password. No password is ever put in the email,
+ * and the owner never knows it. Sent straight away.
+ */
 class TeamMemberMail extends Mailable
 {
     public function __construct(
         public User $member,
-        public string $password,
+        public string $setPasswordUrl,
         public bool $created,
     ) {}
 
@@ -23,7 +26,7 @@ class TeamMemberMail extends Mailable
         return new Envelope(
             subject: $this->created
                 ? __('Your access to :company on :app', ['company' => $company, 'app' => config('app.name')])
-                : __('Your new password for :company', ['company' => $company]),
+                : __('Choose a new password for :company', ['company' => $company]),
         );
     }
 
@@ -34,9 +37,9 @@ class TeamMemberMail extends Mailable
             with: [
                 'member' => $this->member,
                 'company' => $this->member->company,
-                'password' => $this->password,
+                'setPasswordUrl' => $this->setPasswordUrl,
                 'created' => $this->created,
-                'loginUrl' => rtrim((string) config('fatura.frontend_url'), '/').'/login',
+                'validHours' => (int) ceil(((int) config('auth.passwords.invites.expire')) / 60),
                 // The shared mail layout prints it in the footer.
                 'supportEmail' => config('fatura.support.email'),
             ],

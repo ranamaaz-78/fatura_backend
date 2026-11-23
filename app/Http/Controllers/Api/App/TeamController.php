@@ -9,6 +9,7 @@ use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Mail\TeamMemberMail;
 use App\Models\User;
+use App\Services\InviteService;
 use App\Services\NotificationLogger;
 use App\Support\Permissions;
 use App\Traits\ApiResponse;
@@ -16,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\Rule;
 use Throwable;
 
@@ -27,7 +29,10 @@ class TeamController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private readonly NotificationLogger $logger) {}
+    public function __construct(
+        private readonly NotificationLogger $logger,
+        private readonly InviteService $invites,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -52,7 +57,6 @@ class TeamController extends Controller
             'name' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:190', Rule::unique('users', 'email')],
             'phone' => ['nullable', 'string', 'max:40'],
-            'password' => ['required', 'string', 'min:8', 'max:100'],
             // The role the owner picked to start from. Ticking away from it does not rename it.
             'team_role' => ['nullable', 'string', Rule::in(Permissions::presetKeys())],
             'permissions' => ['required', 'array', 'min:1'],
@@ -65,7 +69,8 @@ class TeamController extends Controller
             'name' => $data['name'],
             'email' => $data['email'],
             'phone' => $data['phone'] ?? null,
-            'password' => $data['password'],
+            // No password until the member chooses one through the emailed link.
+            'password' => null,
             'role' => UserRole::Staff,
             'company_id' => $owner->company_id,
             'status' => UserStatus::Active,
@@ -73,7 +78,7 @@ class TeamController extends Controller
             'team_role' => $data['team_role'] ?? Permissions::roleFor($permissions, $owner->company),
         ]);
 
-        $emailError = $this->sendLogin($member, $data['password'], created: true);
+        $emailError = $this->sendLogin($member, created: true);
 
         return $this->success(
             $this->present($member) + ['email_sent' => $emailError === null, 'email_error' => $emailError],
@@ -148,6 +153,7 @@ class TeamController extends Controller
         // A member who is switched off is signed out at once, not at their next sign-in.
         if ($member->status === UserStatus::Disabled) {
             $member->tokens()->delete();
+            $this->forgetLinks($member);
         }
 
         return $this->success(
@@ -156,22 +162,23 @@ class TeamController extends Controller
         );
     }
 
-    /** A new password for the member, emailed to them. Whatever they were signed in on is closed. */
+    /**
+     * The member's password is renewed: the old one stops working at once, whatever they were signed in on is
+     * closed, and a link to choose a new one is emailed to them. The owner never sees or sets the password.
+     */
     public function resetPassword(Request $request, User $user): JsonResponse
     {
         $this->owner($request);
         $member = $this->member($request, $user);
 
-        $data = $request->validate(['password' => ['required', 'string', 'min:8', 'max:100']]);
-
-        $member->update(['password' => $data['password']]);
+        $member->forceFill(['password' => null])->save();
         $member->tokens()->delete();
 
-        $emailError = $this->sendLogin($member, $data['password'], created: false);
+        $emailError = $this->sendLogin($member, created: false);
 
         return $this->success(
             $this->present($member->fresh()) + ['email_sent' => $emailError === null, 'email_error' => $emailError],
-            __('Password changed.'),
+            __('A link to choose a new password was emailed.'),
         );
     }
 
@@ -181,6 +188,8 @@ class TeamController extends Controller
         $member = $this->member($request, $user);
 
         $member->tokens()->delete();
+        // Links are kept by email: without this, an old one would still work for a new account made on that address.
+        $this->forgetLinks($member);
         $member->delete();
 
         return $this->success([], __('Team member removed.'));
@@ -236,19 +245,30 @@ class TeamController extends Controller
             'team_role' => $member->team_role ?? Permissions::roleFor($member->permissionList()),
             'permissions' => $member->permissionList(),
             'last_login_at' => $member->last_login_at?->toIso8601String(),
+            // False until the member has used their link: the screen shows them as invited.
+            'password_set' => $member->password !== null,
         ];
     }
 
-    /** Emails the member how to sign in. A failure is reported back, never raised: the member exists either way. */
-    private function sendLogin(User $member, string $password, bool $created): ?string
+    /** Any set-password or reset link already sent to this member stops working. */
+    private function forgetLinks(User $member): void
+    {
+        Password::broker('invites')->deleteToken($member);
+        Password::broker()->deleteToken($member);
+    }
+
+    /** Emails the member a link to choose their password. A failure is reported back, never raised: the member exists either way. */
+    private function sendLogin(User $member, bool $created): ?string
     {
         $error = null;
 
         try {
-            Mail::to($member->email)->locale($member->preferredLocale())->sendNow(new TeamMemberMail($member, $password, $created));
+            $url = $this->invites->urlFor($member);
+            Mail::to($member->email)->locale($member->preferredLocale())->sendNow(new TeamMemberMail($member, $url, $created));
         } catch (Throwable $e) {
+            // The mail server's own words (host, login name, codes) stay on the server: log and notification log.
             $error = $e->getMessage();
-            Log::error('Team member email failed: '.$error);
+            Log::error('Team member email failed: '.$error, ['exception' => $e]);
         }
 
         $this->logger->log(
@@ -259,6 +279,6 @@ class TeamController extends Controller
             ['company_id' => $member->company_id, 'user_id' => $member->id, 'error' => $error],
         );
 
-        return $error;
+        return $error === null ? null : __('The email could not be sent. Please try again in a few minutes.');
     }
 }

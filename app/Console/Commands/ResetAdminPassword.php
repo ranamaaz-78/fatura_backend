@@ -32,7 +32,7 @@ class ResetAdminPassword extends Command
 
         $password = (string) ($this->option('password') ?: $this->secret('New password (at least 8 characters)'));
 
-        $validator = Validator::make(['password' => $password], ['password' => ['required', 'string', 'min:8', 'max:100']]);
+        $validator = Validator::make(['password' => $password], ['password' => ['required', 'string', 'min:8', 'max:72']]);
 
         if ($validator->fails()) {
             $this->error($validator->errors()->first('password'));
