@@ -28,7 +28,8 @@ class InvoiceVerificationController extends Controller
     private function find(string $code): ?SalesDocument
     {
         return strlen($code) >= 16
-            ? SalesDocument::withoutGlobalScopes()->where('type', 'factura')->where('verify_code', $code)->first()
+            // A draft is not an invoice yet, so its code proves nothing.
+            ? SalesDocument::withoutGlobalScopes()->where('type', 'factura')->whereNull('draft_at')->where('verify_code', $code)->first()
             : null;
     }
 

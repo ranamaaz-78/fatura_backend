@@ -17,9 +17,11 @@ class SalesDocument extends Model
     use BelongsToCompany, HasFactory, SoftDeletes;
 
     // abono is closed to new documents. Rows issued before proforma existed still load.
-    public const TYPES = ['factura', 'albaran', 'quotation', 'proforma', 'abono'];
+    // nota_entrega (delivery receipt) is its own record of goods handed over: prices and a total only (no IVA, recargo
+    // or discount), stock out, no client, no payment, never converted. It has its own screen, apart from the POS.
+    public const TYPES = ['factura', 'albaran', 'quotation', 'proforma', 'nota_entrega', 'abono'];
 
-    public const ISSUABLE = ['factura', 'albaran', 'quotation', 'proforma'];
+    public const ISSUABLE = ['factura', 'albaran', 'quotation', 'proforma', 'nota_entrega'];
 
     public const PAYMENTS = ['pending', 'partial', 'paid'];
 
@@ -33,6 +35,7 @@ class SalesDocument extends Model
         'number',
         'verify_code',
         'issued_at',
+        'draft_at',
         'expires_at',
         'payment_status',
         'payment_method_id',
@@ -177,9 +180,16 @@ class SalesDocument extends Model
             'albaran' => __('Delivery note'),
             'quotation' => __('Quotation'),
             'proforma' => __('Proforma'),
+            'nota_entrega' => __('Delivery receipt'),
             'abono' => __('Credit note'),
             default => ucfirst($type),
         };
+    }
+
+    /** A delivery receipt names no client: the sheet only says "Client". Every other kind is issued to someone. */
+    public static function hasClient(string $type): bool
+    {
+        return $type !== 'nota_entrega';
     }
 
     /** A quotation promises nothing, so it never moves stock. An abono puts the goods back. */
@@ -192,10 +202,10 @@ class SalesDocument extends Model
         };
     }
 
-    /** An albarán and a proforma are issued without IVA. */
+    /** An albarán, a proforma and a delivery receipt are issued without IVA. */
     public static function carriesTax(string $type): bool
     {
-        return $type !== 'albaran' && $type !== 'proforma';
+        return ! in_array($type, ['albaran', 'proforma', 'nota_entrega'], true);
     }
 
     /** Recargo de equivalencia can be added to an invoice or a quotation, and to nothing else. */
@@ -204,10 +214,10 @@ class SalesDocument extends Model
         return $type === 'factura' || $type === 'quotation';
     }
 
-    /** A proforma lists the agreed price only, with nothing taken off it. */
+    /** A proforma and a delivery receipt list the price only, with nothing taken off it (no line or bill discount). */
     public static function carriesDiscount(string $type): bool
     {
-        return $type !== 'proforma';
+        return $type !== 'proforma' && $type !== 'nota_entrega';
     }
 
     /** An invoice or delivery note can be marked paid. A quote or proforma cannot. */
@@ -370,7 +380,34 @@ class SalesDocument extends Model
 
     public function canEdit(): bool
     {
-        return $this->canEditQuotation() || $this->canEditDeliveryNote();
+        return $this->canEditQuotation() || $this->canEditDeliveryNote() || $this->canEditDraft();
+    }
+
+    /**
+     * A draft invoice: it already holds its number and date (the next invoice takes the number after it), but it has
+     * moved no stock and is no sale yet. It is edited freely, then issued (the stock goes out then), or deleted, which
+     * keeps it as a voided invoice so its number never leaves a gap.
+     */
+    public function isDraft(): bool
+    {
+        return $this->draft_at !== null;
+    }
+
+    /** A live draft can still be changed and issued. Once deleted (voided) it is only a record. */
+    public function canEditDraft(): bool
+    {
+        return $this->type === 'factura' && $this->isDraft() && ! $this->isVoided();
+    }
+
+    public function canIssueDraft(): bool
+    {
+        return $this->canEditDraft();
+    }
+
+    /** Only issued documents are sales: drafts are left out of every total, list stat and report. */
+    public function scopeIssued(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        return $query->whereNull($query->getModel()->getTable().'.draft_at');
     }
 
     public function canConvert(): bool
@@ -382,6 +419,7 @@ class SalesDocument extends Model
     {
         return [
             'issued_at' => 'datetime',
+            'draft_at' => 'datetime',
             'expires_at' => 'datetime',
             'voided_at' => 'datetime',
             'deleted_at' => 'datetime',

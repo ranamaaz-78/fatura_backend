@@ -131,7 +131,7 @@ class PaymentController extends Controller
             ->whereIn('type', ['factura', 'albaran', 'proforma'])
             ->whereNull('from_settlement_id')
             ->whereNull('from_document_id')
-            ->whereNull('voided_at')
+            ->whereNull('voided_at')->whereNull('draft_at')
             // A proforma that came back whole was never a sale, so it has no place among the payments.
             ->whereRaw('(returned_cents = 0 OR returned_cents < total_cents)')
             ->with(['paymentMethod', 'settlements.paymentMethod'])

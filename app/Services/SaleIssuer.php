@@ -20,9 +20,27 @@ class SaleIssuer
 
     public function issue(User $user, array $input): SalesDocument
     {
+        // A delivery receipt names nobody: whatever was sent about a client is dropped, and no client is saved.
+        if (! SalesDocument::hasClient($input['type'])) {
+            $input = array_merge($input, [
+                'customer_id' => null,
+                'save_customer' => false,
+                'client_code' => null,
+                'client_name' => '',
+                'client_company' => null,
+                'client_phone' => null,
+                'client_nif' => null,
+                'client_nie' => null,
+                'client_address' => null,
+                'client_email' => null,
+            ]);
+        }
+
         return DB::transaction(function () use ($user, $input) {
             $companyId = (int) $user->company_id;
-            $lines = $this->pricedLines($companyId, $input['lines'], $input['type'], moveStock: empty($input['from_settlement_id']) && empty($input['from_document_id']));
+            // A draft invoice holds its number now but takes no stock until it is issued (DraftIssuer).
+            $draft = ! empty($input['draft']);
+            $lines = $this->pricedLines($companyId, $input['lines'], $input['type'], moveStock: ! $draft && empty($input['from_settlement_id']) && empty($input['from_document_id']));
             [$lines, $discount] = $this->applyBillDiscount($lines, $input, $input['type']);
             $customer = $this->resolveCustomer($companyId, $input);
 
@@ -39,11 +57,15 @@ class SaleIssuer
                 // The month the document is dated in picks its series (F-202610/...); a back-dated one continues that month's.
                 'number' => $this->numbers->take($companyId, $input['type'], (int) ($input['number_period'] ?? $issuedAt->format('Ym'))),
                 'issued_at' => $issuedAt,
+                'draft_at' => $draft ? now() : null,
                 'from_settlement_id' => $input['from_settlement_id'] ?? null,
                 'from_document_id' => $input['from_document_id'] ?? null,
                 'expires_at' => $input['type'] === 'quotation' ? SalesDocument::expiryFor($issuedAt) : null,
-                'payment_status' => $input['payment_status'],
-                'payment_method_id' => $this->resolvePaymentMethod($companyId, $input),
+                // Only a document that takes a payment can start out paid; a quotation, proforma or delivery receipt
+                // always starts pending, whatever the request said.
+                'payment_status' => ! $draft && SalesDocument::settlesPayment($input['type']) ? $input['payment_status'] : 'pending',
+                // A draft is paid only once it is issued.
+                'payment_method_id' => $draft ? null : $this->resolvePaymentMethod($companyId, $input),
                 'client_code' => $customer?->code ?? (($input['client_code'] ?? '') !== '' ? $input['client_code'] : null),
                 'client_name' => $input['client_name'],
                 'client_company' => ($input['client_company'] ?? '') !== '' ? $input['client_company'] : null,
@@ -96,7 +118,8 @@ class SaleIssuer
                 $this->voider->restock($document);
             }
 
-            $lines = $this->pricedLines($companyId, $input['lines'], $type);
+            // A draft has taken no stock, so changing its lines moves none either.
+            $lines = $this->pricedLines($companyId, $input['lines'], $type, moveStock: ! $document->isDraft());
             [$lines, $discount] = $this->applyBillDiscount($lines, $input, $type);
             $customer = $this->resolveCustomer($companyId, $input);
 
@@ -143,6 +166,10 @@ class SaleIssuer
 
     private function cannotEditMessage(SalesDocument $document): string
     {
+        if ($document->type === 'factura' && $document->isDraft()) {
+            return __('This draft was deleted and can no longer be edited.');
+        }
+
         if ($document->type === 'albaran') {
             if ($document->isVoided()) {
                 return __('This delivery note was voided and can no longer be edited.');

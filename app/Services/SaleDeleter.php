@@ -27,6 +27,18 @@ class SaleDeleter
                 throw ValidationException::withMessages(['document' => $reason]);
             }
 
+            // A draft already holds an invoice number, so deleting it must not leave a gap in the numbering: it stays
+            // as a voided invoice with the reason written on it. It took no stock, so none goes back.
+            if ($document->isDraft()) {
+                $document->forceFill([
+                    'voided_at' => now(),
+                    'voided_by' => $user->id,
+                    'void_reason' => __('Draft deleted. Its number is kept as a voided invoice.'),
+                ])->save();
+
+                return $document->fresh(['lines', 'paymentMethod']);
+            }
+
             // The stock it took out goes back on the shelf (a quotation or an invoice made from another document took none).
             $document->load('lines');
             $this->voider->restock($document);

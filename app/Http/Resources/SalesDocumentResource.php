@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\DraftIssuer;
 use App\Support\Text;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -14,8 +15,15 @@ class SalesDocumentResource extends JsonResource
             'id' => $this->id,
             'type' => $this->type,
             'number' => $this->number,
-            'verify_code' => $this->type === 'factura' ? $this->verify_code : null,
+            // A draft is no invoice yet: its QR code would prove nothing, so it gets none until it is issued.
+            'verify_code' => $this->type === 'factura' && ! $this->isDraft() ? $this->verify_code : null,
             'issued_at' => $this->issued_at?->toIso8601String(),
+            // A draft invoice holds its number and date but has taken no stock and is no sale until it is issued.
+            'is_draft' => $this->isDraft(),
+            'draft_at' => $this->draft_at?->toIso8601String(),
+            'can_issue_draft' => $this->canIssueDraft(),
+            // When a draft is opened: the lines the shelf can no longer cover, so they can be fixed before issuing.
+            'stock_shortages' => $this->when($this->relationLoaded('lines') && $this->canIssueDraft(), fn () => DraftIssuer::shortages($this->resource)),
             'expires_at' => $this->expires_at?->toIso8601String(),
             'is_expired' => $this->isExpired(),
             'payment_status' => $this->payment_status,

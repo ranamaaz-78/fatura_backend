@@ -47,10 +47,11 @@ class PrintTemplateController extends Controller
 
         foreach ($targets as $target) {
             $payload = $fields;
-            if ($target === 'albaran' || $type === 'albaran') {
+            // The logo choice never travels to or from a kind that prints no logo (delivery note, delivery receipt).
+            if (! PrintTemplate::carriesLogo($target) || ! PrintTemplate::carriesLogo($type)) {
                 unset($payload['show_logo']);
             }
-            if ($target === 'albaran') {
+            if (! PrintTemplate::carriesLogo($target)) {
                 $payload['show_logo'] = false;
             }
             $this->template($request, $target)->update($payload);
@@ -112,7 +113,7 @@ class PrintTemplateController extends Controller
         if (array_key_exists('notes', $data)) {
             $data['notes'] = trim((string) $data['notes']);
         }
-        if ($type === 'albaran') {
+        if (! PrintTemplate::carriesLogo($type)) {
             $data['show_logo'] = false;
         }
 

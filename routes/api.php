@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\PublicSite\DesktopAppController as PublicDesktopApp
 use App\Http\Controllers\Api\PublicSite\PlanController as PublicPlanController;
 use App\Http\Controllers\Api\PublicSite\InvoiceVerificationController;
 use App\Http\Controllers\Api\PublicSite\SiteContentController as PublicSiteContentController;
+use App\Models\PrintTemplate;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', function () {
@@ -172,6 +173,8 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::get('/sales/{sale}', [Tenant\SaleController::class, 'show'])->withTrashed();
         Route::patch('/sales/{sale}', [Tenant\SaleController::class, 'update']);
         Route::post('/sales/{sale}/convert', [Tenant\SaleController::class, 'convert']);
+        // A draft invoice becomes a real one: same number and date, the stock goes out now.
+        Route::post('/sales/{sale}/issue-draft', [Tenant\SaleController::class, 'issueDraft']);
         Route::patch('/sales/{sale}/payment', [Tenant\SaleController::class, 'updatePayment']);
         Route::post('/sales/{sale}/settle', [Tenant\SaleController::class, 'settle']);
         Route::post('/sales/{sale}/invoice', [Tenant\SaleController::class, 'invoiceAlbaran']);
@@ -204,13 +207,13 @@ Route::middleware(['auth:sanctum', 'role:business_admin,staff'])->prefix('app')-
         Route::get('/print-templates', [Tenant\PrintTemplateController::class, 'index'])->middleware('permission:printables.view|invoices.view|delivery_notes.view|quotes.view|proformas.view');
         Route::put('/print-templates/{type}', [Tenant\PrintTemplateController::class, 'update'])
             ->middleware('permission:printables.update')
-            ->whereIn('type', ['factura', 'albaran', 'quotation', 'proforma']);
+            ->whereIn('type', PrintTemplate::TYPES);
         Route::post('/print-templates/{type}/reset', [Tenant\PrintTemplateController::class, 'reset'])
             ->middleware('permission:printables.update')
-            ->whereIn('type', ['factura', 'albaran', 'quotation', 'proforma']);
+            ->whereIn('type', PrintTemplate::TYPES);
         Route::post('/print-templates/{type}/copy', [Tenant\PrintTemplateController::class, 'copy'])
             ->middleware('permission:printables.update')
-            ->whereIn('type', ['factura', 'albaran', 'quotation', 'proforma']);
+            ->whereIn('type', PrintTemplate::TYPES);
 
         Route::patch('/company/locale', [Tenant\CompanySettingsController::class, 'updateLocale'])->middleware('role:business_admin')->middleware('not.demo');
         Route::patch('/company/document-locale', [Tenant\CompanySettingsController::class, 'updateDocumentLocale'])->middleware('role:business_admin')->middleware('not.demo');

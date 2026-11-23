@@ -17,6 +17,8 @@ $modules = [
     'delivery_notes' => ['view', 'create', 'update', 'pay', 'void', 'delete'],
     'quotes' => ['view', 'create', 'update', 'delete'],
     'proformas' => ['view', 'create', 'pay', 'delete'],
+    // A delivery receipt is issued and kept, or deleted while nothing stands on it: no edit, payment or void.
+    'delivery_receipts' => ['view', 'create', 'delete'],
     'payments' => ['view'],
     'customers' => ['view', 'create', 'update', 'delete'],
     'suppliers' => ['view', 'create', 'update', 'delete'],
@@ -51,6 +53,7 @@ return [
             'delivery_notes.view', 'delivery_notes.create', 'delivery_notes.pay',
             'quotes.view', 'quotes.create',
             'proformas.view',
+            'delivery_receipts.view', 'delivery_receipts.create',
             'payments.view',
             'customers.view', 'customers.create', 'customers.update',
             'products.view',
@@ -63,6 +66,7 @@ return [
             'delivery_notes.view', 'delivery_notes.pay',
             'quotes.view',
             'proformas.view', 'proformas.pay',
+            'delivery_receipts.view',
             'payments.view',
             'customers.view', 'suppliers.view', 'products.view', 'stock.view', 'ledger.view',
             'reports.view',
@@ -77,5 +81,6 @@ return [
         'albaran' => 'delivery_notes',
         'quotation' => 'quotes',
         'proforma' => 'proformas',
+        'nota_entrega' => 'delivery_receipts',
     ],
 ];

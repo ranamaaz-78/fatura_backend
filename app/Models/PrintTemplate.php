@@ -9,7 +9,7 @@ class PrintTemplate extends Model
 {
     use BelongsToCompany;
 
-    public const TYPES = ['factura', 'albaran', 'quotation', 'proforma'];
+    public const TYPES = ['factura', 'albaran', 'quotation', 'proforma', 'nota_entrega'];
 
     public const FONTS = [
         'geist',
@@ -131,7 +131,23 @@ class PrintTemplate extends Model
                 'show_logo' => true,
                 'show_signature' => false,
             ],
+            // Proof the goods were handed over, signed by whoever receives them. Like the delivery note it carries no
+            // company details and no logo.
+            'nota_entrega' => [
+                'primary_color' => self::DEFAULT_COLOR,
+                'font_key' => 'geist',
+                'footer_notes' => __('Goods received in good condition. This delivery receipt is not a tax invoice.', [], $locale),
+                'notes' => '',
+                'show_logo' => false,
+                'show_signature' => true,
+            ],
         ];
+    }
+
+    /** The delivery note and the delivery receipt go with the goods and print no company details or logo. */
+    public static function carriesLogo(string $type): bool
+    {
+        return $type !== 'albaran' && $type !== 'nota_entrega';
     }
 
     public static function seedDefaults(int $companyId, ?string $locale = null): void

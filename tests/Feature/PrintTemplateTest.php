@@ -31,12 +31,12 @@ class PrintTemplateTest extends TestCase
         $this->owner = User::factory()->businessAdmin()->create(['company_id' => $this->company->id]);
     }
 
-    public function test_a_new_company_starts_with_four_printables(): void
+    public function test_a_new_company_starts_with_five_printables(): void
     {
         $this->actingAs($this->owner, 'sanctum')
             ->getJson('/api/app/print-templates')
             ->assertOk()
-            ->assertJsonCount(4, 'data.templates')
+            ->assertJsonCount(5, 'data.templates')
             ->assertJsonPath('data.templates.0.type', 'factura')
             ->assertJsonPath('data.templates.0.primary_color', '#004ac6')
             ->assertJsonPath('data.templates.0.font_key', 'geist')
@@ -44,7 +44,12 @@ class PrintTemplateTest extends TestCase
             ->assertJsonPath('data.templates.1.show_signature', true)
             ->assertJsonPath('data.templates.1.show_logo', false)
             ->assertJsonPath('data.templates.2.type', 'quotation')
-            ->assertJsonPath('data.templates.3.type', 'proforma');
+            ->assertJsonPath('data.templates.3.type', 'proforma')
+            // The delivery receipt: no logo or company details (like the delivery note), a signature line for whoever
+            // receives the goods.
+            ->assertJsonPath('data.templates.4.type', 'nota_entrega')
+            ->assertJsonPath('data.templates.4.show_logo', false)
+            ->assertJsonPath('data.templates.4.show_signature', true);
     }
 
     public function test_saving_one_type_does_not_change_the_others(): void

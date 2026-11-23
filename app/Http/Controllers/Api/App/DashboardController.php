@@ -34,7 +34,7 @@ class DashboardController extends Controller
             ->whereNull('from_settlement_id')
             ->whereNull('from_document_id')
             ->where('payment_status', 'paid')
-            ->whereNull('voided_at')
+            ->whereNull('voided_at')->whereNull('draft_at')
             ->whereBetween('issued_at', $month)
             ->sum('total_cents');
 
@@ -123,7 +123,7 @@ class DashboardController extends Controller
 
         $recent = SalesDocument::query()
             ->whereIn('type', SalesDocument::ISSUABLE)
-            ->whereNull('voided_at')
+            ->whereNull('voided_at')->whereNull('draft_at')
             ->leftJoinSub($this->settledSub(), 'settled', 'settled.sales_document_id', '=', 'sales_documents.id')
             ->select([
                 'sales_documents.id',
@@ -181,7 +181,7 @@ class DashboardController extends Controller
                 'overdue' => 0,
                 'invoices_this_month' => (int) SalesDocument::query()
                     ->where('type', 'factura')
-                    ->whereNull('voided_at')
+                    ->whereNull('voided_at')->whereNull('draft_at')
                     ->whereBetween('issued_at', $month)
                     ->count(),
                 'clients' => (int) Customer::query()->count(),
@@ -215,7 +215,7 @@ class DashboardController extends Controller
             ->whereIn('sales_documents.type', self::SALE_TYPES)
             ->whereNull('sales_documents.from_settlement_id')
             ->whereNull('sales_documents.from_document_id')
-            ->whereNull('sales_documents.voided_at')
+            ->whereNull('sales_documents.voided_at')->whereNull('sales_documents.draft_at')
             ->when($range !== null, fn (Builder $query) => $query->whereBetween('sales_documents.issued_at', $range));
     }
 

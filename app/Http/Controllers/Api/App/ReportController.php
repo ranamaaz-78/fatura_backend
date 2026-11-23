@@ -95,7 +95,9 @@ class ReportController extends Controller
                 Carbon::parse($filters['from'])->startOfDay(),
                 Carbon::parse($filters['to'])->endOfDay(),
             ])
-            ->when(! $request->boolean('include_voided'), fn (Builder $q) => $q->whereNull('voided_at'));
+            ->when(! $request->boolean('include_voided'), fn (Builder $q) => $q->whereNull('voided_at'))
+            // A draft is no document yet: it is never listed or downloaded with the issued ones.
+            ->whereNull('draft_at');
 
         $total = (clone $query)->count();
 
@@ -597,7 +599,7 @@ class ReportController extends Controller
             ->whereIn('sales_documents.type', self::SALE_TYPES)
             ->whereNull('sales_documents.from_settlement_id')
             ->whereNull('sales_documents.from_document_id')
-            ->whereNull('sales_documents.voided_at')
+            ->whereNull('sales_documents.voided_at')->whereNull('sales_documents.draft_at')
             ->when($range !== null, fn (Builder $query) => $query->whereBetween('sales_documents.issued_at', $range));
     }
 

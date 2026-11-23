@@ -13,6 +13,7 @@ class DocumentNumber
         'albaran' => 'AL',
         'quotation' => 'Q',
         'proforma' => 'PF',
+        'nota_entrega' => 'NE',
         'abono' => 'AB',
         'client' => 'C',
         'supplier' => 'S',

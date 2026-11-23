@@ -10,6 +10,7 @@ use App\Models\SalesDocumentReturn;
 use App\Models\SalesDocumentSettlement;
 use App\Services\AlbaranInvoicer;
 use App\Services\DocumentNumber;
+use App\Services\DraftIssuer;
 use App\Services\SaleIssuer;
 use App\Services\SaleReturner;
 use App\Services\SaleSettler;
@@ -68,7 +69,7 @@ class SaleController extends Controller
             'search' => ['nullable', 'string', 'max:120'],
             'type' => ['nullable', Rule::in(SalesDocument::TYPES)],
             'payment_status' => ['nullable', Rule::in(SalesDocument::PAYMENTS)],
-            'display_status' => ['nullable', Rule::in(['pending', 'paid', 'partial', 'voided'])],
+            'display_status' => ['nullable', Rule::in(['pending', 'paid', 'partial', 'voided', 'draft'])],
             // The Deleted list: only for the types the person may delete.
             'trashed' => ['nullable', Rule::in(['0', '1', 'true', 'false', 0, 1, true, false])],
             'page' => ['nullable', 'integer', 'min:1'],
@@ -162,6 +163,12 @@ class SaleController extends Controller
         $data = $request->validate($this->documentRules());
         $this->allow($request, $data['type'], 'create');
 
+        // Only an invoice is drafted: it holds its number now and takes its stock when issued.
+        $data['draft'] = (bool) ($data['draft'] ?? false);
+        if ($data['draft'] && $data['type'] !== 'factura') {
+            return $this->error(__('Only an invoice can be saved as a draft.'), 422, ['draft' => [__('Only an invoice can be saved as a draft.')]]);
+        }
+
         $issued = IssueDate::parse($data['issued_at']);
         $data['number_period'] = IssueDate::period($issued);
         $data['issued_at'] = IssueDate::stored($issued);
@@ -171,9 +178,26 @@ class SaleController extends Controller
 
         return $this->success(
             new SalesDocumentResource($document),
-            __(':number issued.', ['number' => $document->number]),
+            $document->isDraft()
+                ? __(':number saved as a draft. The number is kept; the stock is taken when it is issued.', ['number' => $document->number])
+                : __(':number issued.', ['number' => $document->number]),
             201,
         );
+    }
+
+    /** Issues a draft invoice: same number and date, the stock goes out now, and it can be marked paid. */
+    public function issueDraft(Request $request, SalesDocument $sale, DraftIssuer $drafts): JsonResponse
+    {
+        $this->allow($request, $sale->type, 'create');
+
+        $data = $request->validate([
+            'payment_status' => ['required', Rule::in(SalesDocument::MARKABLE_PAYMENTS)],
+            'payment_method_id' => ['nullable', 'integer'],
+        ]);
+
+        $document = $drafts->issue($sale, $data);
+
+        return $this->success(new SalesDocumentResource($document), __(':number issued.', ['number' => $document->number]));
     }
 
     public function show(Request $request, SalesDocument $sale): JsonResponse
@@ -192,7 +216,9 @@ class SaleController extends Controller
 
     public function update(Request $request, SalesDocument $sale): JsonResponse
     {
-        $this->allow($request, $sale->type, 'update');
+        // A draft invoice is still being made: changing it needs "create" (invoices have no "update" to tick, and
+        // falling back to "view" would let a read-only member rewrite it).
+        $this->allow($request, $sale->type, $sale->isDraft() ? 'create' : 'update');
 
         $data = $request->validate($this->documentRules(forUpdate: true));
         $data['issued_at'] = IssueDate::stored(IssueDate::parse($data['issued_at']));
@@ -237,6 +263,10 @@ class SaleController extends Controller
 
         if ($sale->isVoided()) {
             return $this->error(__('This document is voided.'), 422);
+        }
+
+        if ($sale->isDraft()) {
+            return $this->error(__('Issue the draft first; a draft is not paid.'), 422);
         }
 
         $data = $request->validate([
@@ -408,6 +438,11 @@ class SaleController extends Controller
 
         $document = $this->deleter->delete($request->user(), $sale);
 
+        // A draft is not put in the bin: it stays as a voided invoice, so its number leaves no gap.
+        if ($document->isDraft()) {
+            return $this->success(new SalesDocumentResource($document), __(':number was a draft. It is kept as a voided invoice so the numbering has no gap.', ['number' => $document->number]));
+        }
+
         return $this->success(new SalesDocumentResource($document), __(':number deleted. You can restore it from the Restore page.', ['number' => $document->number]));
     }
 
@@ -425,7 +460,7 @@ class SaleController extends Controller
     {
         $counts = [];
 
-        foreach (['factura', 'albaran', 'quotation', 'proforma'] as $type) {
+        foreach (SalesDocument::ISSUABLE as $type) {
             $counts[$type] = $request->user()->hasPermission(Permissions::forDocument($type).'.delete')
                 ? SalesDocument::onlyTrashed()->where('type', $type)->count()
                 : 0;
@@ -494,15 +529,22 @@ class SaleController extends Controller
             return;
         }
 
-        $query->whereNull('voided_at')->where('payment_status', $status);
+        if ($status === 'draft') {
+            $query->whereNull('voided_at')->whereNotNull('draft_at');
+
+            return;
+        }
+
+        // A draft is not pending payment yet: it is not a sale until it is issued.
+        $query->whereNull('voided_at')->whereNull('draft_at')->where('payment_status', $status);
     }
 
     /**
-     * @return array{all: int, pending: int, paid: int, partial: int, voided: int}
+     * @return array{all: int, pending: int, paid: int, partial: int, voided: int, draft: int}
      */
     private function listCounts(Builder $base): array
     {
-        $live = fn () => (clone $base)->whereNull('voided_at');
+        $live = fn () => (clone $base)->whereNull('voided_at')->whereNull('draft_at');
 
         return [
             'all' => (clone $base)->count(),
@@ -510,6 +552,7 @@ class SaleController extends Controller
             'paid' => $live()->where('payment_status', 'paid')->count(),
             'partial' => $live()->where('payment_status', 'partial')->count(),
             'voided' => (clone $base)->whereNotNull('voided_at')->count(),
+            'draft' => (clone $base)->whereNull('voided_at')->whereNotNull('draft_at')->count(),
         ];
     }
 
@@ -528,7 +571,8 @@ class SaleController extends Controller
      */
     private function listStats(Builder $base): array
     {
-        $live = (clone $base)->whereNull('voided_at');
+        // Drafts are not sales yet: no figure counts them.
+        $live = (clone $base)->whereNull('voided_at')->whereNull('draft_at');
         $monthStart = now()->copy()->startOfMonth();
         $monthEnd = now()->copy()->endOfMonth();
 
@@ -570,7 +614,8 @@ class SaleController extends Controller
             'customer_id' => ['nullable', 'integer'],
             'save_customer' => ['nullable', 'boolean'],
             'client_code' => ['nullable', 'string', 'max:32'],
-            'client_name' => ['required', 'string', 'max:180'],
+            // Every document names its client, except a delivery receipt, which names nobody (the server clears it).
+            'client_name' => [$forUpdate ? 'required' : 'required_unless:type,nota_entrega', 'nullable', 'string', 'max:180'],
             'client_company' => ['nullable', 'string', 'max:180'],
             'client_phone' => ['nullable', 'string', 'max:40'],
             'client_nif' => ['nullable', 'string', 'max:32'],
@@ -598,6 +643,7 @@ class SaleController extends Controller
 
         return array_merge($rules, [
             'type' => ['required', Rule::in(SalesDocument::ISSUABLE)],
+            'draft' => ['nullable', 'boolean'],
             'payment_status' => ['required', Rule::in(SalesDocument::MARKABLE_PAYMENTS)],
             'payment_method_id' => ['nullable', 'integer'],
         ]);
