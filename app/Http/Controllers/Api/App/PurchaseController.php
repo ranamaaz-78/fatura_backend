@@ -50,6 +50,8 @@ class PurchaseController extends Controller
 
         $page = (clone $query)
             ->withCount('lines')
+            // Each row offers its supplier-ledger paper (print / download) when it has an entry there.
+            ->with('ledgerEntry')
             ->when($request->boolean('with_lines'), fn (Builder $q) => $q->with('lines.product:id,barcode'))
             ->orderByDesc('purchased_on')
             ->orderByDesc('id')
