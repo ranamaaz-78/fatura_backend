@@ -42,13 +42,14 @@ class DashboardController extends Controller
             ->whereBetween('created_at', $month)
             ->sum('total_cents');
 
-        $monthBase = $this->saleDocuments($month)
+        $monthBase = $this->saleDocuments($month, receipts: true)
             ->leftJoinSub($this->settledSub(), 'settled', 'settled.sales_document_id', '=', 'sales_documents.id');
 
         $monthTotals = (clone $monthBase)
             ->selectRaw('COUNT(*) as document_count')
             ->selectRaw('SUM(CASE WHEN sales_documents.payment_status = \'paid\' THEN 1 ELSE 0 END) as paid_count')
-            ->selectRaw('SUM(CASE WHEN sales_documents.payment_status <> \'paid\' THEN 1 ELSE 0 END) as open_count')
+            // A delivery receipt is never paid or owed, so it is not an open document.
+            ->selectRaw('SUM(CASE WHEN sales_documents.payment_status <> \'paid\' AND sales_documents.type <> \'nota_entrega\' THEN 1 ELSE 0 END) as open_count')
             ->selectRaw('COALESCE(SUM(sales_documents.total_cents), 0) as total_cents')
             ->selectRaw($this->outstandingSumSql().' as outstanding_cents')
             ->first();
@@ -91,6 +92,7 @@ class DashboardController extends Controller
             ->all();
 
         $status = (clone $monthBase)
+            ->where('sales_documents.type', '<>', 'nota_entrega')
             ->select('sales_documents.payment_status')
             ->selectRaw('COUNT(*) as document_count')
             ->selectRaw('COALESCE(SUM(sales_documents.total_cents), 0) as total_cents')
@@ -142,7 +144,7 @@ class DashboardController extends Controller
             ->map(fn ($row) => $this->documentRow($row, (int) $row->outstanding_cents))
             ->all();
 
-        $margins = $this->saleDocuments($month, differences: false)
+        $margins = $this->saleDocuments($month, differences: false, receipts: true)
             ->join('sales_document_lines', 'sales_document_lines.sales_document_id', '=', 'sales_documents.id')
             ->leftJoin('products', 'products.id', '=', 'sales_document_lines.product_id')
             ->selectRaw('COALESCE(SUM(sales_document_lines.base_cents), 0) as base_cents')
@@ -212,11 +214,12 @@ class DashboardController extends Controller
     /**
      * @param  bool  $differences  Count the IVA/recargo an invoice added to a paid delivery note (SalesDocument::counted).
      *                              The margin works line by line, so it leaves them out: the note's lines counted.
+     * @param  bool  $receipts  Also count delivery receipts (what was sold). They are never owed.
      */
-    private function saleDocuments(?array $range, bool $differences = true): Builder
+    private function saleDocuments(?array $range, bool $differences = true, bool $receipts = false): Builder
     {
         return SalesDocument::counted()
-            ->whereIn('sales_documents.type', self::SALE_TYPES)
+            ->whereIn('sales_documents.type', $receipts ? [...self::SALE_TYPES, 'nota_entrega'] : self::SALE_TYPES)
             ->when(! $differences, fn (Builder $query) => $query->whereNull('sales_documents.from_document_id'))
             ->whereNull('sales_documents.voided_at')->whereNull('sales_documents.draft_at')
             ->when($range !== null, fn (Builder $query) => $query->whereBetween('sales_documents.issued_at', $range));
@@ -233,7 +236,7 @@ class DashboardController extends Controller
 
     private function outstandingExpr(): string
     {
-        return 'CASE WHEN sales_documents.payment_status = \'paid\' THEN 0 WHEN sales_documents.total_cents - sales_documents.returned_cents > COALESCE(settled.settled_cents, 0) THEN sales_documents.total_cents - sales_documents.returned_cents - COALESCE(settled.settled_cents, 0) ELSE 0 END';
+        return 'CASE WHEN sales_documents.type = \'nota_entrega\' THEN 0 WHEN sales_documents.payment_status = \'paid\' THEN 0 WHEN sales_documents.total_cents - sales_documents.returned_cents > COALESCE(settled.settled_cents, 0) THEN sales_documents.total_cents - sales_documents.returned_cents - COALESCE(settled.settled_cents, 0) ELSE 0 END';
     }
 
     private function outstandingSumSql(): string

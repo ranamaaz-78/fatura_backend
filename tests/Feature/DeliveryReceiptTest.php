@@ -195,26 +195,83 @@ class DeliveryReceiptTest extends TestCase
         $this->assertSame(20, $this->product->fresh()->quantity);
     }
 
-    public function test_it_has_its_own_list_and_never_counts_as_a_sale(): void
+    public function test_it_has_its_own_list(): void
     {
         $this->issue()->assertCreated();
         $as = fn () => $this->actingAs($this->owner, 'sanctum');
 
         $as()->getJson('/api/app/sales?type=nota_entrega')->assertOk()->assertJsonCount(1, 'data.items');
         $as()->getJson('/api/app/sales?type=factura')->assertOk()->assertJsonCount(0, 'data.items');
-
-        // Not money: the dashboard, the payments and the sales report do not see it.
-        $as()->getJson('/api/app/dashboard')->assertOk()->assertJsonPath('data.kpis.document_count', 0);
-        $as()->getJson('/api/app/payments')->assertOk()->assertJsonCount(0, 'data.items');
-        $as()->getJson('/api/app/reports/sales')->assertOk()->assertJsonPath('data.kpis.document_count', 0);
-
-        // The same report does count an invoice, so the zero above is real.
-        $this->issue(['type' => 'factura', 'client_name' => 'Ana'])->assertCreated();
-        $as()->getJson('/api/app/reports/sales')->assertOk()->assertJsonPath('data.kpis.document_count', 1);
-        $as()->getJson('/api/app/dashboard')->assertOk()->assertJsonPath('data.kpis.document_count', 1);
-
-        // It shows in the trash counts once deleted, like the other kinds.
         $as()->getJson('/api/app/sales/trash-counts')->assertOk()->assertJsonPath('data.nota_entrega', 0);
+    }
+
+    public function test_it_counts_as_a_sale_but_is_never_owed_paid_taxed_or_a_client(): void
+    {
+        // 3 pieces at 10.00: 30.00 on a receipt, and an invoice of 36.30 beside it.
+        $this->issue()->assertCreated();
+        $this->issue(['type' => 'factura', 'client_name' => 'Ana'])->assertCreated();
+        $as = fn () => $this->actingAs($this->owner, 'sanctum');
+
+        $sales = $as()->getJson('/api/app/reports/sales')->assertOk();
+        $sales->assertJsonPath('data.kpis.document_count', 2)
+            ->assertJsonPath('data.kpis.total_cents', 6630)
+            ->assertJsonPath('data.kpis.outstanding_cents', 3630)
+            ->assertJsonPath('data.kpis.pending_count', 1)
+            ->assertJsonPath('data.kpis.client_count', 1);
+        $byType = collect($sales->json('data.breakdown'))->keyBy('key');
+        $this->assertSame(3000, $byType['nota_entrega']['total_cents']);
+        $this->assertSame(0, $byType['nota_entrega']['open_count']);
+        $this->assertSame(1, collect($sales->json('data.status'))->sum('count'));
+
+        $dashboard = $as()->getJson('/api/app/dashboard')->assertOk()->json('data.kpis');
+        $this->assertSame(2, $dashboard['document_count']);
+        $this->assertSame(3630, $dashboard['outstanding']);
+        $this->assertSame(1, $dashboard['open_count']);
+        $this->assertSame(0, $dashboard['paid_this_month']);
+
+        // Goods that left: both product reports count the receipt's pieces.
+        $this->assertSame(6, (int) collect($as()->getJson('/api/app/reports/products')->json('data.rows'))->sum('quantity'));
+        $this->assertSame(6, (int) collect($as()->getJson('/api/app/reports/sold')->json('data.rows'))->sum('quantity'));
+
+        // Not money owed or paid, not tax, not a client.
+        $as()->getJson('/api/app/reports/outstanding')->assertOk()->assertJsonCount(1, 'data.rows');
+        $as()->getJson('/api/app/payments')->assertOk()->assertJsonCount(1, 'data.items');
+        $this->assertSame(630, $as()->getJson('/api/app/reports/tax')->json('data.kpis.tax_cents'));
+        $this->assertSame(3000, $as()->getJson('/api/app/reports/tax')->json('data.kpis.base_cents'));
+        $as()->getJson('/api/app/reports/clients')->assertOk()->assertJsonCount(1, 'data.rows');
+    }
+
+    public function test_the_receipts_report_lists_them_and_what_they_handed_over(): void
+    {
+        $first = $this->issue()->assertCreated()->json('data.number');
+        $this->issue()->assertCreated();
+        $this->issue(['type' => 'factura', 'client_name' => 'Ana'])->assertCreated();
+        $as = fn () => $this->actingAs($this->owner, 'sanctum');
+
+        $report = $as()->getJson('/api/app/reports/receipts')->assertOk();
+        $report->assertJsonPath('data.kind', 'receipts')
+            ->assertJsonPath('data.kpis.document_count', 2)
+            ->assertJsonPath('data.kpis.quantity', 6)
+            ->assertJsonPath('data.kpis.product_count', 1)
+            ->assertJsonPath('data.kpis.total_cents', 6000)
+            ->assertJsonCount(2, 'data.rows')
+            ->assertJsonPath('data.products.0.quantity', 6)
+            ->assertJsonPath('data.products.0.document_count', 2)
+            ->assertJsonPath('data.products.0.total_cents', 6000);
+        $this->assertContains($first, collect($report->json('data.rows'))->pluck('number')->all());
+        $this->assertSame(3, $report->json('data.rows.0.quantity'));
+
+        // The period filter applies, and a deleted receipt leaves the report.
+        $as()->getJson('/api/app/reports/receipts?period=custom&from=2000-01-01&to=2000-01-31')->assertOk()->assertJsonCount(0, 'data.rows');
+        $as()->deleteJson('/api/app/sales/'.$report->json('data.rows.0.id'))->assertOk();
+        $as()->getJson('/api/app/reports/receipts')->assertOk()->assertJsonCount(1, 'data.rows');
+
+        // Bulk download offers them too, with the receipts permission.
+        $today = now()->toDateString();
+        $as()->getJson("/api/app/reports/documents?type=nota_entrega&from={$today}&to={$today}")->assertOk()->assertJsonPath('data.total', 1);
+
+        $noReports = User::factory()->create(['role' => 'staff', 'company_id' => $this->company->id, 'permissions' => ['delivery_receipts.view']]);
+        $this->actingAs($noReports, 'sanctum')->getJson('/api/app/reports/receipts')->assertForbidden();
     }
 
     public function test_it_has_its_own_numbering_and_printable(): void

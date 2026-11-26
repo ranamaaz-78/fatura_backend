@@ -32,6 +32,8 @@ class ReportController extends Controller
         'stock',
         'clients',
         'suppliers',
+        // Delivery receipts (notas de entrega): the list of them and the products they handed over.
+        'receipts',
     ];
 
     private const SALE_TYPES = ['factura', 'albaran', 'proforma'];
@@ -61,6 +63,7 @@ class ReportController extends Controller
             'stock' => $this->stock(),
             'clients' => $this->clients($range),
             'suppliers' => $this->suppliers(),
+            'receipts' => $this->receipts($range),
         };
 
         return $this->success(['kind' => $kind, ...$data]);
@@ -76,7 +79,7 @@ class ReportController extends Controller
     public function documents(Request $request): JsonResponse
     {
         $filters = $request->validate([
-            'type' => ['required', Rule::in(self::SALE_TYPES)],
+            'type' => ['required', Rule::in([...self::SALE_TYPES, 'nota_entrega'])],
             'from' => ['required', 'date'],
             'to' => ['required', 'date', 'after_or_equal:from'],
             'include_voided' => ['nullable', 'boolean'],
@@ -131,17 +134,17 @@ class ReportController extends Controller
      */
     private function sales(?array $range): array
     {
-        $base = $this->saleDocuments($range)->leftJoinSub($this->settledSub(), 'settled', 'settled.sales_document_id', '=', 'sales_documents.id');
+        $base = $this->saleDocuments($range, receipts: true)->leftJoinSub($this->settledSub(), 'settled', 'settled.sales_document_id', '=', 'sales_documents.id');
 
         $totals = (clone $base)
             ->selectRaw('COUNT(*) as document_count')
-            ->selectRaw('COUNT(DISTINCT sales_documents.client_name) as client_count')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN sales_documents.type <> \'nota_entrega\' THEN sales_documents.client_name END) as client_count')
             ->selectRaw('COALESCE(SUM(sales_documents.total_cents), 0) as total_cents')
             ->selectRaw($this->paidSumSql().' as paid_cents')
             ->selectRaw($this->outstandingSumSql().' as outstanding_cents')
             ->selectRaw('SUM(CASE WHEN sales_documents.payment_status = \'paid\' THEN 1 ELSE 0 END) as paid_count')
             ->selectRaw('SUM(CASE WHEN sales_documents.payment_status = \'partial\' THEN 1 ELSE 0 END) as partial_count')
-            ->selectRaw('SUM(CASE WHEN sales_documents.payment_status = \'pending\' THEN 1 ELSE 0 END) as pending_count')
+            ->selectRaw('SUM(CASE WHEN sales_documents.payment_status = \'pending\' AND sales_documents.type <> \'nota_entrega\' THEN 1 ELSE 0 END) as pending_count')
             ->first();
 
         $series = (clone $base)
@@ -163,7 +166,7 @@ class ReportController extends Controller
             ->selectRaw('COUNT(*) as document_count')
             ->selectRaw('COALESCE(SUM(sales_documents.total_cents), 0) as total_cents')
             ->selectRaw('SUM(CASE WHEN sales_documents.payment_status = \'paid\' THEN 1 ELSE 0 END) as paid_count')
-            ->selectRaw('SUM(CASE WHEN sales_documents.payment_status <> \'paid\' THEN 1 ELSE 0 END) as open_count')
+            ->selectRaw('SUM(CASE WHEN sales_documents.payment_status <> \'paid\' AND sales_documents.type <> \'nota_entrega\' THEN 1 ELSE 0 END) as open_count')
             ->groupBy('sales_documents.type')
             ->orderBy('sales_documents.type')
             ->get()
@@ -177,7 +180,9 @@ class ReportController extends Controller
             ])
             ->all();
 
+        // A delivery receipt is never paid or pending, so it has no payment status to show.
         $status = (clone $base)
+            ->where('sales_documents.type', '<>', 'nota_entrega')
             ->select('sales_documents.payment_status')
             ->selectRaw('COUNT(*) as document_count')
             ->selectRaw('COALESCE(SUM(sales_documents.total_cents), 0) as total_cents')
@@ -252,7 +257,7 @@ class ReportController extends Controller
      */
     private function products(?array $range): array
     {
-        $rows = $this->saleDocuments($range, differences: false)
+        $rows = $this->saleDocuments($range, differences: false, receipts: true)
             ->join('sales_document_lines', 'sales_document_lines.sales_document_id', '=', 'sales_documents.id')
             ->selectRaw('sales_document_lines.product_id')
             ->selectRaw('sales_document_lines.article')
@@ -286,6 +291,71 @@ class ReportController extends Controller
     }
 
     /**
+     * The delivery receipts of the period: each one with its pieces and total, and what they handed over by product.
+     *
+     * @param  array{0: CarbonInterface, 1: CarbonInterface}|null  $range
+     * @return array<string, mixed>
+     */
+    private function receipts(?array $range): array
+    {
+        $base = fn () => $this->saleDocuments($range, differences: false, receipts: true)
+            ->where('sales_documents.type', 'nota_entrega')
+            ->join('sales_document_lines', 'sales_document_lines.sales_document_id', '=', 'sales_documents.id');
+
+        $rows = $base()
+            ->selectRaw('sales_documents.id')
+            ->selectRaw('sales_documents.number')
+            ->selectRaw('sales_documents.issued_at')
+            ->selectRaw('sales_documents.total_cents')
+            ->selectRaw('COUNT(sales_document_lines.id) as line_count')
+            ->selectRaw('SUM(sales_document_lines.quantity) as quantity')
+            ->groupBy('sales_documents.id', 'sales_documents.number', 'sales_documents.issued_at', 'sales_documents.total_cents')
+            ->orderByDesc('sales_documents.issued_at')
+            ->orderByDesc('sales_documents.id')
+            ->get()
+            ->map(fn ($row) => [
+                'id' => (int) $row->id,
+                'number' => (string) $row->number,
+                'issued_at' => $row->issued_at?->toIso8601String(),
+                'line_count' => (int) $row->line_count,
+                'quantity' => (int) $row->quantity,
+                'total_cents' => (int) $row->total_cents,
+            ]);
+
+        $products = $base()
+            ->leftJoin('products', 'products.id', '=', 'sales_document_lines.product_id')
+            ->selectRaw('sales_document_lines.product_id')
+            ->selectRaw('sales_document_lines.article')
+            ->selectRaw('MAX(products.barcode) as barcode')
+            ->selectRaw('SUM(sales_document_lines.quantity) as quantity')
+            ->selectRaw('COUNT(DISTINCT sales_documents.id) as document_count')
+            ->selectRaw('COALESCE(SUM(sales_document_lines.total_cents), 0) as total_cents')
+            ->groupBy('sales_document_lines.product_id', 'sales_document_lines.article')
+            ->orderByDesc('quantity')
+            ->orderByDesc('total_cents')
+            ->get()
+            ->map(fn ($row) => [
+                'product_id' => $row->product_id === null ? null : (int) $row->product_id,
+                'barcode' => $row->barcode === null ? null : (string) $row->barcode,
+                'article' => (string) $row->article,
+                'quantity' => (int) $row->quantity,
+                'document_count' => (int) $row->document_count,
+                'total_cents' => (int) $row->total_cents,
+            ]);
+
+        return [
+            'kpis' => [
+                'document_count' => $rows->count(),
+                'quantity' => (int) $rows->sum('quantity'),
+                'product_count' => $products->count(),
+                'total_cents' => (int) $rows->sum('total_cents'),
+            ],
+            'rows' => $rows->all(),
+            'products' => $products->all(),
+        ];
+    }
+
+    /**
      * Every product that was sold in the period, one row each: barcode, name, brand, how many went, on how many
      * documents, the average price, what it came to, and how many are left in stock now.
      *
@@ -294,7 +364,7 @@ class ReportController extends Controller
      */
     private function sold(?array $range): array
     {
-        $rows = $this->saleDocuments($range, differences: false)
+        $rows = $this->saleDocuments($range, differences: false, receipts: true)
             ->join('sales_document_lines', 'sales_document_lines.sales_document_id', '=', 'sales_documents.id')
             ->leftJoin('products', 'products.id', '=', 'sales_document_lines.product_id')
             ->selectRaw('sales_document_lines.product_id')
@@ -597,11 +667,13 @@ class ReportController extends Controller
     /**
      * @param  bool  $differences  Count the IVA/recargo an invoice added to a paid delivery note (see SalesDocument::counted).
      *                              Reports that work line by line (products, sold) leave it out: the note's lines already counted.
+     * @param  bool  $receipts  Also count delivery receipts (sales and product reports). They take no payment, carry no IVA
+     *                          and name no client, so the money-owed, payment, tax and client reports never count them.
      */
-    private function saleDocuments(?array $range, bool $differences = true): Builder
+    private function saleDocuments(?array $range, bool $differences = true, bool $receipts = false): Builder
     {
         return SalesDocument::counted()
-            ->whereIn('sales_documents.type', self::SALE_TYPES)
+            ->whereIn('sales_documents.type', $receipts ? [...self::SALE_TYPES, 'nota_entrega'] : self::SALE_TYPES)
             ->when(! $differences, fn (Builder $query) => $query->whereNull('sales_documents.from_document_id'))
             ->whereNull('sales_documents.voided_at')->whereNull('sales_documents.draft_at')
             ->when($range !== null, fn (Builder $query) => $query->whereBetween('sales_documents.issued_at', $range));
@@ -631,7 +703,7 @@ class ReportController extends Controller
 
     private function outstandingExpr(): string
     {
-        return 'CASE WHEN sales_documents.payment_status = \'paid\' THEN 0 WHEN sales_documents.total_cents - sales_documents.returned_cents > COALESCE(settled.settled_cents, 0) THEN sales_documents.total_cents - sales_documents.returned_cents - COALESCE(settled.settled_cents, 0) ELSE 0 END';
+        return 'CASE WHEN sales_documents.type = \'nota_entrega\' THEN 0 WHEN sales_documents.payment_status = \'paid\' THEN 0 WHEN sales_documents.total_cents - sales_documents.returned_cents > COALESCE(settled.settled_cents, 0) THEN sales_documents.total_cents - sales_documents.returned_cents - COALESCE(settled.settled_cents, 0) ELSE 0 END';
     }
 
     private function paidSumSql(): string

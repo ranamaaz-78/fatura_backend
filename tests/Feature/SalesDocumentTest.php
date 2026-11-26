@@ -272,6 +272,29 @@ class SalesDocumentTest extends TestCase
             ->assertJsonPath('message', 'A paid document cannot go back to pending. Void it instead.');
     }
 
+    public function test_the_payment_method_of_a_paid_invoice_or_delivery_note_can_be_corrected(): void
+    {
+        $other = (int) \App\Models\CompanyPaymentMethod::withoutGlobalScopes()
+            ->where('company_id', $this->company->id)->where('id', '!=', $this->cashId())->where('is_active', true)->value('id');
+
+        foreach (['factura', 'albaran'] as $type) {
+            $id = $this->actingAs($this->owner, 'sanctum')
+                ->postJson('/api/app/sales', $this->payload($type, payment: ['payment_status' => 'paid', 'payment_method_id' => $this->cashId()]))
+                ->assertCreated()->json('data.id');
+
+            $this->actingAs($this->owner, 'sanctum')
+                ->patchJson("/api/app/sales/{$id}/payment", ['payment_status' => 'paid', 'payment_method_id' => $other])
+                ->assertOk()
+                ->assertJsonPath('data.payment_status', 'paid')
+                ->assertJsonPath('data.payment_method.id', $other);
+
+            // A method is still required.
+            $this->actingAs($this->owner, 'sanctum')
+                ->patchJson("/api/app/sales/{$id}/payment", ['payment_status' => 'paid'])
+                ->assertStatus(422);
+        }
+    }
+
     public function test_voiding_a_paid_invoice_puts_the_stock_back(): void
     {
         $roll = Product::factory()->create([
